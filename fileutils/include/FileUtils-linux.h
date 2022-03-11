@@ -25,7 +25,7 @@
 
 #pragma once
 
-#include "platform/FileUtils.h"
+#include "FileUtils.h"
 namespace cc {
 class FileUtilsLinux : public FileUtils {
 public:
