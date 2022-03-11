@@ -1,6 +1,6 @@
 name: 🏗️ Compile
 
-on: [pull]
+on: [push]
 
 jobs:
   compile_windows:
