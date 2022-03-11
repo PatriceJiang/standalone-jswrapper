@@ -44,7 +44,7 @@ jobs:
       - name: Compile on Mac
         shell: bash
         run: |
-          cmake -B build -GNinja
-          cmake --build build --config Release
+          cmake -B build -G"Unix Makefiles"
+          cmake --build build --config Release -- -j 3
           cd build
           ./demo
