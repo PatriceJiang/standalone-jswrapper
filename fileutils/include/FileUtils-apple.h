@@ -34,7 +34,7 @@
 #include <vector>
 
 #include "base/Macros.h"
-#include "platform/FileUtils.h"
+#include "FileUtils.h"
 
 namespace cc {
 
@@ -52,11 +52,6 @@ public:
     virtual std::string getWritablePath() const override;
     virtual std::string getFullPathForDirectoryAndFilename(const std::string &directory, const std::string &filename) const override;
 
-    virtual ValueMap getValueMapFromFile(const std::string &filename) override;
-    virtual ValueMap getValueMapFromData(const char *filedata, int filesize) override;
-    virtual bool     writeToFile(const ValueMap &dict, const std::string &fullPath) override;
-
-    virtual ValueVector getValueVectorFromFile(const std::string &filename) override;
 #if CC_FILEUTILS_APPLE_ENABLE_OBJC
     void setBundle(NSBundle *bundle);
 #endif
@@ -66,8 +61,6 @@ public:
 private:
     virtual bool isFileExistInternal(const std::string &filePath) const override;
     virtual bool removeDirectory(const std::string &dirPath) override;
-    virtual void valueMapCompact(ValueMap &valueMap) override;
-    virtual void valueVectorCompact(ValueVector &valueVector) override;
 
     struct IMPL;
     std::unique_ptr<IMPL> pimpl_;

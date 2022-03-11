@@ -43,20 +43,6 @@
 
 namespace cc {
 
-// Implement DictMaker
-
-#if (CC_PLATFORM != CC_PLATFORM_MAC_IOS) && (CC_PLATFORM != CC_PLATFORM_MAC_OSX)
-
-#else
-
-/* The subclass FileUtilsApple should override these two method. */
-ValueMap    FileUtils::getValueMapFromFile(const std::string &filename) { return ValueMap(); }
-ValueMap    FileUtils::getValueMapFromData(const char *filedata, int filesize) { return ValueMap(); }
-ValueVector FileUtils::getValueVectorFromFile(const std::string &filename) { return ValueVector(); }
-bool        FileUtils::writeToFile(const ValueMap &dict, const std::string &fullPath) { return false; }
-
-#endif /* (CC_PLATFORM != CC_PLATFORM_MAC_IOS) && (CC_PLATFORM != CC_PLATFORM_MAC_OSX) */
-
 // Implement FileUtils
 FileUtils *FileUtils::sharedFileUtils = nullptr;
 

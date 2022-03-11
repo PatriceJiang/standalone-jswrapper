@@ -28,15 +28,13 @@
 
 #import <Foundation/Foundation.h>
 
-#include "platform/apple/FileUtils-apple.h"
+#include "FileUtils-apple.h"
 
 #include <ftw.h>
 
 #include <string>
 #include <stack>
 
-#include "platform/FileUtils.h"
-#include "platform/SAXParser.h"
 #include "base/Log.h"
 
 namespace cc {
@@ -53,131 +51,6 @@ struct FileUtilsApple::IMPL {
 private:
     NSBundle *bundle_;
 };
-
-static id convertCCValueToNSObject(const cc::Value &value);
-static cc::Value convertNSObjectToCCValue(id object);
-
-static void addNSObjectToCCMap(id nsKey, id nsValue, ValueMap &dict);
-static void addCCValueToNSDictionary(const std::string &key, const Value &value, NSMutableDictionary *dict);
-static void addNSObjectToCCVector(id item, ValueVector &array);
-static void addCCValueToNSArray(const Value &value, NSMutableArray *array);
-
-static id convertCCValueToNSObject(const cc::Value &value) {
-    switch (value.getType()) {
-        case Value::Type::NONE:
-            return [NSNull null];
-
-        case Value::Type::STRING:
-            return [NSString stringWithCString:value.asString().c_str() encoding:NSUTF8StringEncoding];
-
-        case Value::Type::BYTE:
-            return [NSNumber numberWithInt:value.asByte()];
-
-        case Value::Type::INTEGER:
-            return [NSNumber numberWithInt:value.asInt()];
-
-        case Value::Type::UNSIGNED:
-            return [NSNumber numberWithUnsignedInt:value.asUnsignedInt()];
-
-        case Value::Type::FLOAT:
-            return [NSNumber numberWithFloat:value.asFloat()];
-
-        case Value::Type::DOUBLE:
-            return [NSNumber numberWithDouble:value.asDouble()];
-
-        case Value::Type::BOOLEAN:
-            return [NSNumber numberWithBool:value.asBool()];
-
-        case Value::Type::VECTOR: {
-            NSMutableArray *array = [NSMutableArray array];
-            const ValueVector &vector = value.asValueVector();
-            for (const auto &e : vector) {
-                addCCValueToNSArray(e, array);
-            }
-            return array;
-        }
-
-        case Value::Type::MAP: {
-            NSMutableDictionary *dictionary = [NSMutableDictionary dictionary];
-            const ValueMap &map = value.asValueMap();
-            for (auto iter = map.begin(); iter != map.end(); ++iter) {
-                addCCValueToNSDictionary(iter->first, iter->second, dictionary);
-            }
-            return dictionary;
-        }
-
-        case Value::Type::INT_KEY_MAP:
-            break;
-    }
-
-    return [NSNull null];
-}
-
-static cc::Value convertNSObjectToCCValue(id item) {
-    // add string value into array
-    if ([item isKindOfClass:[NSString class]]) {
-        return Value([item UTF8String]);
-    }
-
-    // add number value into array(such as int, float, bool and so on)
-    // the value is a number
-    if ([item isKindOfClass:[NSNumber class]]) {
-        NSNumber *num = item;
-        const char *numType = [num objCType];
-        if (num == (void *)kCFBooleanFalse || num == (void *)kCFBooleanTrue) {
-            bool v = [num boolValue];
-            return Value(v);
-        } else if (strcmp(numType, @encode(float)) == 0) {
-            return Value([num floatValue]);
-        } else if (strcmp(numType, @encode(double)) == 0) {
-            return Value([num doubleValue]);
-        } else {
-            return Value([num intValue]);
-        }
-    }
-
-    // add dictionary value into array
-    if ([item isKindOfClass:[NSDictionary class]]) {
-        ValueMap dict;
-        for (id subKey in [item allKeys]) {
-            id subValue = [item objectForKey:subKey];
-            addNSObjectToCCMap(subKey, subValue, dict);
-        }
-
-        return Value(dict);
-    }
-
-    // add array value into array
-    if ([item isKindOfClass:[NSArray class]]) {
-        ValueVector subArray;
-        for (id subItem in item) {
-            addNSObjectToCCVector(subItem, subArray);
-        }
-        return Value(subArray);
-    }
-
-    return Value::VALUE_NULL;
-}
-
-static void addNSObjectToCCVector(id item, ValueVector &array) {
-    array.push_back(convertNSObjectToCCValue(item));
-}
-
-static void addCCValueToNSArray(const Value &value, NSMutableArray *array) {
-    [array addObject:convertCCValueToNSObject(value)];
-}
-
-static void addNSObjectToCCMap(id nsKey, id nsValue, ValueMap &dict) {
-    // the key must be a string
-    CCASSERT([nsKey isKindOfClass:[NSString class]], "The key should be a string!");
-    std::string key = [nsKey UTF8String];
-    dict[key] = convertNSObjectToCCValue(nsValue);
-}
-
-static void addCCValueToNSDictionary(const std::string &key, const Value &value, NSMutableDictionary *dict) {
-    NSString *NSkey = [NSString stringWithCString:key.c_str() encoding:NSUTF8StringEncoding];
-    [dict setObject:convertCCValueToNSObject(value) forKey:NSkey];
-}
 
 FileUtilsApple::FileUtilsApple() : pimpl_(new IMPL([NSBundle mainBundle])) {
 }
@@ -305,121 +178,6 @@ std::string FileUtilsApple::getFullPathForDirectoryAndFilename(const std::string
         }
     }
     return "";
-}
-
-ValueMap FileUtilsApple::getValueMapFromFile(const std::string &filename) {
-    auto d(FileUtils::getInstance()->getDataFromFile(filename));
-    return getValueMapFromData(reinterpret_cast<char *>(d.getBytes()), static_cast<int>(d.getSize()));
-}
-
-ValueMap FileUtilsApple::getValueMapFromData(const char *filedata, int filesize) {
-    NSData *file = [NSData dataWithBytes:filedata length:filesize];
-    NSPropertyListFormat format;
-    NSError *error;
-    NSDictionary *dict = [NSPropertyListSerialization propertyListWithData:file options:NSPropertyListImmutable format:&format error:&error];
-
-    ValueMap ret;
-
-    if (dict != nil) {
-        for (id key in [dict allKeys]) {
-            id value = [dict objectForKey:key];
-            addNSObjectToCCMap(key, value, ret);
-        }
-    }
-    return ret;
-}
-
-bool FileUtilsApple::writeToFile(const ValueMap &dict, const std::string &fullPath) {
-    return writeValueMapToFile(dict, fullPath);
-}
-
-bool FileUtils::writeValueMapToFile(const ValueMap &dict, const std::string &fullPath) {
-    valueMapCompact(const_cast<ValueMap &>(dict));
-    //CC_LOG_DEBUG("iOS||Mac Dictionary %d write to file %s", dict->_ID, fullPath.c_str());
-    NSMutableDictionary *nsDict = [NSMutableDictionary dictionary];
-
-    for (auto iter = dict.begin(); iter != dict.end(); ++iter) {
-        addCCValueToNSDictionary(iter->first, iter->second, nsDict);
-    }
-
-    NSString *file = [NSString stringWithUTF8String:fullPath.c_str()];
-    // do it atomically
-    return [nsDict writeToFile:file atomically:YES];
-}
-
-void FileUtilsApple::valueMapCompact(ValueMap &valueMap) {
-    auto itr = valueMap.begin();
-    while (itr != valueMap.end()) {
-        auto vtype = itr->second.getType();
-        switch (vtype) {
-            case Value::Type::NONE: {
-                itr = valueMap.erase(itr);
-                continue;
-            } break;
-            case Value::Type::MAP: {
-                valueMapCompact(itr->second.asValueMap());
-            } break;
-            case Value::Type::VECTOR: {
-                valueVectorCompact(itr->second.asValueVector());
-            } break;
-            default:
-                break;
-        }
-        itr++;
-    }
-}
-
-void FileUtilsApple::valueVectorCompact(ValueVector &valueVector) {
-    auto itr = valueVector.begin();
-    while (itr != valueVector.end()) {
-        auto vtype = (*itr).getType();
-        switch (vtype) {
-            case Value::Type::NONE: {
-                itr = valueVector.erase(itr);
-                continue;
-            } break;
-            case Value::Type::MAP: {
-                valueMapCompact((*itr).asValueMap());
-            } break;
-            case Value::Type::VECTOR: {
-                valueVectorCompact((*itr).asValueVector());
-            } break;
-            default:
-                break;
-        }
-        itr++;
-    }
-}
-
-bool FileUtils::writeValueVectorToFile(const ValueVector &vecData, const std::string &fullPath) {
-    NSString *path = [NSString stringWithUTF8String:fullPath.c_str()];
-    NSMutableArray *array = [NSMutableArray array];
-
-    for (const auto &e : vecData) {
-        addCCValueToNSArray(e, array);
-    }
-
-    [array writeToFile:path atomically:YES];
-
-    return true;
-}
-ValueVector FileUtilsApple::getValueVectorFromFile(const std::string &filename) {
-    //    NSString* pPath = [NSString stringWithUTF8String:pFileName];
-    //    NSString* pathExtension= [pPath pathExtension];
-    //    pPath = [pPath stringByDeletingPathExtension];
-    //    pPath = [[NSBundle mainBundle] pathForResource:pPath ofType:pathExtension];
-    //    fixing cannot read data using Array::createWithContentsOfFile
-    std::string fullPath = fullPathForFilename(filename);
-    NSString *path = [NSString stringWithUTF8String:fullPath.c_str()];
-    NSArray *array = [NSArray arrayWithContentsOfFile:path];
-
-    ValueVector ret;
-
-    for (id value in array) {
-        addNSObjectToCCVector(value, ret);
-    }
-
-    return ret;
 }
 
 bool FileUtilsApple::createDirectory(const std::string &path) {

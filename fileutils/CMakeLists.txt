@@ -40,3 +40,11 @@ target_link_libraries(ccfileutils PUBLIC
 if(WINDOWS)
 cc_win32_definations(ccfileutils)
 endif()
+
+
+if(APPLE)
+target_link_libraries(ccfileutils PUBLIC
+   "-framework Foundation"
+   "-framework SystemConfiguration"
+)
+endif()
