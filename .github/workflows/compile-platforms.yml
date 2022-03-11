@@ -1,0 +1,50 @@
+name: 🏗️ Compile
+
+on: [pull]
+
+jobs:
+  compile_windows:
+    # windows 2019, Visual Studio Enterprise 2019
+    # windows 2016, Visual Studio Enterprise 2017
+    #runs-on: windows-latest
+    runs-on: windows-2019
+    #runs-on: windows-2016
+    name: "Windows"
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Run on Windows
+        shell: bash
+        run: |
+          cmake -B build
+          cmake --build build --config Release
+          cd build/Release
+          ./demo.exe
+
+  compile_linux:
+    name: "linux"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build on Linux
+        run: |
+          cmake -B build
+          cmake --build build --config Release
+          cd build
+          ./demo
+
+  compile_mac:
+    name: "MacOS"
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: "3.x"
+      - name: Compile on Mac
+        shell: bash
+        run: |
+          cmake -B build -GNinja
+          cmake --build build --config Release
+          cd build
+          ./demo
