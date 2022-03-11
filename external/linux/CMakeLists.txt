@@ -5,6 +5,10 @@ set_target_properties(uv PROPERTIES
   INTERFACE_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_LIST_DIR}/include/libuv
 )
 
+target_link_libraries(uv INTERFACE 
+  pthread dl
+)
+
 add_library(libz STATIC IMPORTED GLOBAL)
 set_target_properties(libz PROPERTIES
   IMPORTED_LOCATION ${CMAKE_CURRENT_LIST_DIR}/lib/libz/libz.a
@@ -15,6 +19,7 @@ add_library(v8 STATIC IMPORTED GLOBAL)
 set_target_properties(v8 PROPERTIES
   IMPORTED_LOCATION ${CMAKE_CURRENT_LIST_DIR}/lib/v8/libv8_monolith.a
   INTERFACE_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_LIST_DIR}/include/v8
+  INTERFACE_COMPILE_DEFINITIONS V8_COMPRESS_POINTERS
 )
 
 set(se_libs_name v8 uv)
