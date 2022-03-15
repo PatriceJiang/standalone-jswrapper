@@ -3,26 +3,7 @@ cmake_minimum_required(VERSION 3.8)
 project(jswrapper CXX)
 
 
-
-
-set(USE_SE_V8 ON)
-set(USE_V8_DEBUGGER ON)
-
-
-include(cmake/predefine.cmake)
-if(WINDOWS)
-   add_definitions(-DCC_STATIC=1)
-endif()
-
-set(CMAKE_CXX_STANDARD 17)
-
-include(external/CMakeLists.txt)
-
-add_subdirectory(base ccbase)
-add_subdirectory(fileutils ccfileutils)
-add_subdirectory(jswrapper jswrapper)
-add_subdirectory(math ccmath)
-add_subdirectory(bindings bindings)
+include(${CMAKE_CURRENT_LIST_DIR}/cocos/CMakeLists.txt)
 
 add_executable(demo
    demo/Tank.h
@@ -36,12 +17,12 @@ add_executable(demo
    demo/test.cpp
 )
 
-target_link_libraries(demo bindings)
+target_link_libraries(demo ccbindings)
 
 set(target_name demo)
 
 if(MSVC)
-   file(GLOB WINDOWS_DLLS external/win64/libs/*.dll)
+   file(GLOB WINDOWS_DLLS cocos/external/win64/libs/*.dll)
    foreach(item ${WINDOWS_DLLS})
         get_filename_component(filename ${item} NAME)
         get_filename_component(abs ${item} ABSOLUTE)
