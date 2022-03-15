@@ -1,7 +1,7 @@
 
 ## ScriptEngine 独立工程
 
-从 cocos 源码中最小化 ScriptEngine 依赖
+最小化 ScriptEngine 依赖, 支持 Mac/Windows/Linux 平台. 
 
 ## 使用方法
 
