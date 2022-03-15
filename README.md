@@ -5,6 +5,8 @@
 
 ## 使用方法
 
+拷贝 `cocos/` 和 `tools/` 目录到目标工程
+
 #### CMake 配置
 
 参考 [CMakeLists.txt](./CMakeLists.txt)
