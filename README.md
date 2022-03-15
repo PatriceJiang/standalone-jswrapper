@@ -14,7 +14,7 @@
 
 ## 使用方法
 
-拷贝 `cocos/` 和 `tools/` 目录到目标工程
+拷贝 `cocos/` 和 `tools/` 目录到目标工程, 根据需要定制 `bindings`.
 
 #### CMake 配置
 
