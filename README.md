@@ -6,6 +6,12 @@
 
 最小化 ScriptEngine 依赖, 支持 Mac/Windows/Linux 平台. 
 
+目录结构
+
+- `cocos/` 为 `jswrapper` 依赖和代码, 需要和引擎同步更新.
+- `jswrapper-adaptor/` 为 demo 工程的依赖, 包括转换函数的定义 和 FS 接口. 
+
+
 ## 使用方法
 
 拷贝 `cocos/` 和 `tools/` 目录到目标工程
@@ -16,6 +22,7 @@
 
 ```cmake
 include(${CMAKE_CURRENT_LIST_DIR}/cocos/CMakeLists.txt)
+include(${CMAKE_CURRENT_LIST_DIR}/jswrapper-adaptor/CMakeLists.txt)
 # ...
 target_link_libraries(demo ccbindings)
 ```

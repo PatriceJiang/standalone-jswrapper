@@ -4,6 +4,8 @@ project(jswrapper CXX)
 
 
 include(${CMAKE_CURRENT_LIST_DIR}/cocos/CMakeLists.txt)
+include(${CMAKE_CURRENT_LIST_DIR}/jswrapper-adaptor/CMakeLists.txt)
+
 
 add_executable(demo
    demo/Tank.h
