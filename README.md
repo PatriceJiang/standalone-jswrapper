@@ -1,4 +1,7 @@
 
+
+![workflow result](https://github.com/PatriceJiang/standalone-jswrapper/actions/workflows/compile-platforms.yml/badge.svg)
+
 ## ScriptEngine 独立工程
 
 最小化 ScriptEngine 依赖, 支持 Mac/Windows/Linux 平台. 
