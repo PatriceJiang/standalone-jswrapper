@@ -9,7 +9,7 @@
 目录结构
 
 - `cocos/` 为 `jswrapper` 依赖和代码, 需要和引擎同步更新.
-- `jswrapper-adaptor/` 为 demo 工程的依赖, 包括转换函数的定义 和 FS 接口. 
+- `jswrapper-adaptor/` 为 demo 工程的依赖, 包括转换函数的定义 和 FS 接口. 由用户工程维护.
 
 
 ## 使用方法
