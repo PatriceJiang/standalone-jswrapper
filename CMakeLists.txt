@@ -8,12 +8,11 @@ include(${CMAKE_CURRENT_LIST_DIR}/cocos/CMakeLists.txt)
 add_executable(demo
    demo/Tank.h
    demo/Tank.cpp
+   
+   # genbindings 生成的代码
    demo/auto/jsb_demo_auto.cpp
    demo/auto/jsb_demo_auto.h
-
-   demo/seinit/jsb_global_init.h
-   demo/seinit/jsb_global_init.cpp
-
+   
    demo/test.cpp
 )
 
