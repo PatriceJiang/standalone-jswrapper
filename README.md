@@ -17,7 +17,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/cocos/CMakeLists.txt)
 target_link_libraries(demo ccbindings)
 ```
 
-#### 配置
+#### `.ini` 配置
 
 参考 [`demo/demo.ini`](./demo/demo.ini). 
 
