@@ -14,7 +14,7 @@
 
 ## 使用方法
 
-拷贝 `cocos/` 和 `tools/` 目录到目标工程, 根据需要定制 `bindings`.
+拷贝 `cocos/` `jswrapper-adaptor/` 和 `tools/` 目录到目标工程, 根据需要定制 `jswrapper-adaptor/`.
 
 #### CMake 配置
 
