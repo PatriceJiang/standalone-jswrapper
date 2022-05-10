@@ -134,8 +134,8 @@ target_include_directories(${module_name} PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/include/jswrapper/${private_include_folder}
 )
 
-INSTALL(TARGETS ${module_name})
-INSTALL (
-    DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/include/
-    DESTINATION "include"
-    FILES_MATCHING PATTERN "*.h*")
+# INSTALL(TARGETS ${module_name})
+# INSTALL (
+#     DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/include/
+#     DESTINATION "include"
+#     FILES_MATCHING PATTERN "*.h*")

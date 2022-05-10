@@ -12,13 +12,23 @@ add_executable(demo
    demo/Tank.cpp
    
    # genbindings 生成的代码
-   demo/auto/jsb_demo_auto.cpp
-   demo/auto/jsb_demo_auto.h
+   #demo/auto/jsb_demo_auto.cpp
+   # demo/auto/jsb_demo_auto.h
+  
+   demo/Tank_setpl.cpp
+   demo/Tank_setpl.h
    
    demo/test.cpp
 )
 
-target_link_libraries(demo ccbindings)
+# set_target_properties(demo PROPERTIES
+# CXX_STANDARD 20
+# )
+
+target_link_libraries(demo 
+   ccbindings
+   setpl
+)
 
 set(target_name demo)
 

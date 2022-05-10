@@ -34,6 +34,13 @@ set_target_properties(uv PROPERTIES
 )
 
 
+add_library(websockets SHARED IMPORTED GLOBAL)
+
+set_target_properties(websockets PROPERTIES
+  IMPORTED_IMPLIB ${CMAKE_CURRENT_LIST_DIR}/libs/websockets.lib
+  IMPORTED_LOCATION ${CMAKE_CURRENT_LIST_DIR}/libs/websockets.dll
+  INTERFACE_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_LIST_DIR}/include/websockets
+)
 
 set(se_libs_name)
 

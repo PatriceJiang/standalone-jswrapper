@@ -66,6 +66,6 @@ target_link_libraries(${module_name} PUBLIC
 )
 
 
-INSTALL(TARGETS ${module_name} 
-        PUBLIC_HEADER DESTINATION include/math
-)
+# INSTALL(TARGETS ${module_name} 
+#         PUBLIC_HEADER DESTINATION include/math
+# )

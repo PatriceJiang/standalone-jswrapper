@@ -14,3 +14,5 @@ include(${CMAKE_CURRENT_LIST_DIR}/external/CMakeLists.txt)
 
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/base ccbase)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/jswrapper ccjswrapper)
+# add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/websocket-server ccws-server)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/setpl ccsetpl)
