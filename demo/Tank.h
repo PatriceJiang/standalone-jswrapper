@@ -7,10 +7,12 @@ namespace war {
 
 class Weapon {
 public:
-    Weapon(int) {}
+    Weapon(int id) : __id(id) {}
     virtual void fire2(std::string s) {
         std::cout << "fire with weapon!!! @" << s << std::endl;
     }
+
+    int __id;
 };
 
 class Tank : public Weapon {
@@ -23,6 +25,10 @@ public:
     std::string getName() const { return name; }
     void        setName(const std::string &name) {
         this->name = name;
+    }
+
+    void load(Weapon *w) {
+        std::cout << "load weapon id __ " << w->__id << std::endl;
     }
 
     int id{-1};

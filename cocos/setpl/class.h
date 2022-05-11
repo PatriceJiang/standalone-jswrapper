@@ -60,8 +60,6 @@ struct FinalizerBase {
     virtual bool destruct(se::State &) = 0;
 };
 
-
-
 struct InstanceMethodBase {
     std::string  class_name;
     std::string  method_name;
@@ -161,10 +159,12 @@ struct InstanceMethod<R (*)(T *, ARGS...)> : InstanceMethodBase {
 struct InstanceMethodOverloaded : InstanceMethodBase {
     std::vector<InstanceMethodBase *> methods;
     bool                              invoke(se::State &state) const override {
+        bool ret      = false;
         auto argCount = state.args().size();
         for (auto *m : methods) {
             if (m->arg_count == argCount) {
-                return m->invoke(state);
+                ret = m->invoke(state);
+                if (ret) return true;
             }
         }
         return false;
@@ -282,6 +282,7 @@ struct InstanceAttribute<AttributeAccessor<T, Getter, Setter>> : InstanceAttribu
     static_assert(!has_setter || std::is_member_function_pointer<Setter>::value);
     static_assert(!has_getter || std::is_same<T, getter_class_type>::value);
     static_assert(!has_setter || std::is_same<T, setter_class_type>::value);
+    static_assert(has_getter || has_setter);
 
     setter_type setterPtr;
     getter_type getterPtr;
@@ -335,7 +336,7 @@ public:
         std::vector<std::tuple<std::string, InstanceMethodBase *>>    methods;
         std::vector<std::tuple<std::string, InstanceMethodBase *>>    _staticMethods;
         std::vector<std::tuple<std::string, InstanceMethodBase *>>    _staticAttributes;
-        std::vector< ConstructorBase *>       constructors;
+        std::vector<ConstructorBase *>                                constructors;
         std::vector<FinalizerBase *>                                  finalizers;
         std::string                                                   className;
         se::Class *                                                   kls         = nullptr;
@@ -393,8 +394,14 @@ public:
         return _ctx->kls->getProto();
     }
 
+    class_& withClass(const std::function<void(se::Class*)>& cb) {
+        _delayBlocks.emplace_back(cb);
+        return *this;
+    }
+
 private:
     context_ *_ctx{nullptr};
+    std::vector<std::function<void(se::Class *)>> _delayBlocks;
     template <typename R>
     friend void genericConstructor(const v8::FunctionCallbackInfo<v8::Value> &);
 };
@@ -496,6 +503,7 @@ void genericConstructor(const v8::FunctionCallbackInfo<v8::Value> &_v8args) {
     if (!ret) {
         SE_LOGE("[ERROR] Failed to invoke %s, location: %s:%d\n", "constructor", __FILE__, __LINE__);
     }
+    assert(ret); // construction failure is not allowed.
     se::Value _property;
     bool      _found = false;
     _found           = thisObject->getProperty("_ctor", &_property);
@@ -554,6 +562,10 @@ bool class_<T>::install() {
     }
 
     _ctx->kls = se::Class::create(_ctx->className, _ctx->nsObject, _ctx->parentProto, fn, _ctx);
+
+    for (auto &cb : _delayBlocks) {
+        cb(_ctx->kls);
+    }
 
     auto *getter = &genericAccessorGet<InstanceAttributeBase>;
     auto *setter = &genericAccessorSet<InstanceAttributeBase>;

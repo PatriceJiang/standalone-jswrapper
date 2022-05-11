@@ -24,6 +24,9 @@ console.log(`run script hello.js`);
 // let w = new Weapon(333,"Sdfs");
 let w = new Weapon(333);
 w.fire2(`sdfsfd power ${w.power()}`);
+w.fire2(`sdfsfd power ${w.addid(10000000)}`);
+
+tank.load(w);
 
 
 
