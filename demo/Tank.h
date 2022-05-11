@@ -16,7 +16,13 @@ public:
         this->name = name;
     }
 
-    int id;
+    int id{-1};
+
+    size_t badID() {return id;}
+    bool updateBadId(uint8_t nid) {
+        id = nid;
+        return true;
+    }
 
 private:
     std::string name;

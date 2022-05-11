@@ -7,6 +7,7 @@ add_library(setpl
     "function.h"
     module.h
     signature.h
+    class.cpp
 )
 
 

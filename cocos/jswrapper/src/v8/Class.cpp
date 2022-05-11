@@ -66,8 +66,9 @@ Class::Class()
 Class::~Class() = default;
 
 /* static */
-Class *Class::create(const std::string &clsName, se::Object *parent, Object *parentProto, v8::FunctionCallback ctor) {
+Class *Class::create(const std::string &clsName, se::Object *parent, Object *parentProto, v8::FunctionCallback ctor, void *data) {
     auto *cls = new Class();
+    cls->_constructorData = data;
     if (cls != nullptr && !cls->init(clsName, parent, parentProto, ctor)) {
         delete cls;
         cls = nullptr;
@@ -75,7 +76,7 @@ Class *Class::create(const std::string &clsName, se::Object *parent, Object *par
     return cls;
 }
 
-Class *Class::create(const std::initializer_list<const char *> &classPath, se::Object *parent, Object *parentProto, v8::FunctionCallback ctor) {
+Class *Class::create(const std::initializer_list<const char *> &classPath, se::Object *parent, Object *parentProto, v8::FunctionCallback ctor, void *data) {
     se::AutoHandleScope scope;
     se::Object *        currentParent = parent;
     se::Value           tmp;
@@ -84,7 +85,7 @@ Class *Class::create(const std::initializer_list<const char *> &classPath, se::O
         CCASSERT(ok, "class or namespace in path is not defined");
         currentParent = tmp.toObject();
     }
-    return create(*(classPath.end() - 1), currentParent, parentProto, ctor);
+    return create(*(classPath.end() - 1), currentParent, parentProto, ctor, data);
 }
 
 bool Class::init(const std::string &clsName, Object *parent, Object *parentProto, v8::FunctionCallback ctor) {
@@ -104,7 +105,9 @@ bool Class::init(const std::string &clsName, Object *parent, Object *parentProto
 
     v8::FunctionCallback ctorToSet = _ctor != nullptr ? _ctor : invalidConstructor;
 
-    _ctorTemplate.Reset(__isolate, v8::FunctionTemplate::New(__isolate, ctorToSet));
+    v8::Local<v8::External> external = v8::External::New(__isolate, _constructorData);
+
+    _ctorTemplate.Reset(__isolate, v8::FunctionTemplate::New(__isolate, ctorToSet, external));
     v8::MaybeLocal<v8::String> jsNameVal = v8::String::NewFromUtf8(__isolate, _name.c_str(), v8::NewStringType::kNormal);
     if (jsNameVal.IsEmpty()) {
         return false;
@@ -184,28 +187,28 @@ bool Class::install() {
     return true;
 }
 
-bool Class::defineFunction(const char *name, v8::FunctionCallback func) {
+bool Class::defineFunction(const char *name, v8::FunctionCallback func, void *data) {
     v8::MaybeLocal<v8::String> jsName = v8::String::NewFromUtf8(__isolate, name, v8::NewStringType::kNormal);
     if (jsName.IsEmpty()) {
         return false;
     }
-    _ctorTemplate.Get(__isolate)->PrototypeTemplate()->Set(jsName.ToLocalChecked(), v8::FunctionTemplate::New(__isolate, func));
+    _ctorTemplate.Get(__isolate)->PrototypeTemplate()->Set(jsName.ToLocalChecked(), v8::FunctionTemplate::New(__isolate, func, v8::External::New(__isolate, data)));
     return true;
 }
 
-bool Class::defineProperty(const char *name, v8::AccessorNameGetterCallback getter, v8::AccessorNameSetterCallback setter) {
+bool Class::defineProperty(const char *name, v8::AccessorNameGetterCallback getter, v8::AccessorNameSetterCallback setter, void *data) {
     v8::MaybeLocal<v8::String> jsName = v8::String::NewFromUtf8(__isolate, name, v8::NewStringType::kNormal);
     if (jsName.IsEmpty()) {
         return false;
     }
-    _ctorTemplate.Get(__isolate)->PrototypeTemplate()->SetAccessor(jsName.ToLocalChecked(), getter, setter);
+    _ctorTemplate.Get(__isolate)->PrototypeTemplate()->SetAccessor(jsName.ToLocalChecked(), getter, setter, v8::External::New(__isolate, data));
     return true;
 }
 
-bool Class::defineProperty(const std::initializer_list<const char *> &names, v8::AccessorNameGetterCallback getter, v8::AccessorNameSetterCallback setter) {
+bool Class::defineProperty(const std::initializer_list<const char *> &names, v8::AccessorNameGetterCallback getter, v8::AccessorNameSetterCallback setter, void *data) {
     bool ret = true;
     for (const auto *name : names) {
-        ret &= defineProperty(name, getter, setter);
+        ret &= defineProperty(name, getter, setter, data);
     }
     return ret;
 }

@@ -38,6 +38,7 @@ namespace internal {
 
 void jsToSeArgs(const v8::FunctionCallbackInfo<v8::Value> &v8args, ValueArray &outArr) {
     v8::Isolate *isolate = v8args.GetIsolate();
+    outArr.resize(v8args.Length());
     for (int i = 0; i < v8args.Length(); i++) {
         jsToSeValue(isolate, v8args[i], &outArr[i]);
     }

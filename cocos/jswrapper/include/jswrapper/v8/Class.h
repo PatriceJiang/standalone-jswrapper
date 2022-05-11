@@ -51,9 +51,9 @@ public:
          *  @return A class instance used for creating relevant native binding objects.
          *  @note Don't need to delete the pointer return by this method, it's managed internally.
          */
-    static Class *create(const std::string &clsName, se::Object *parent, Object *parentProto, v8::FunctionCallback ctor);
+    static Class *create(const std::string &clsName, se::Object *parent, Object *parentProto, v8::FunctionCallback ctor, void *data = nullptr);
 
-    static Class *create(const std::initializer_list<const char *> &classPath, se::Object *parent, Object *parentProto, v8::FunctionCallback ctor);
+    static Class *create(const std::initializer_list<const char *> &classPath, se::Object *parent, Object *parentProto, v8::FunctionCallback ctor, void *data = nullptr);
 
     /**
          *  @brief Defines a member function with a callback. Each objects created by class will have this function property.
@@ -61,7 +61,7 @@ public:
          *  @param[in] func A callback to invoke when the property is called as a function.
          *  @return true if succeed, otherwise false.
          */
-    bool defineFunction(const char *name, v8::FunctionCallback func);
+    bool defineFunction(const char *name, v8::FunctionCallback func, void *data = nullptr);
 
     /**
          *  @brief Defines a property with accessor callbacks. Each objects created by class will have this property.
@@ -70,9 +70,9 @@ public:
          *  @param[in] setter A callback to invoke when the property is set.
          *  @return true if succeed, otherwise false.
          */
-    bool defineProperty(const char *name, v8::AccessorNameGetterCallback getter, v8::AccessorNameSetterCallback setter);
+    bool defineProperty(const char *name, v8::AccessorNameGetterCallback getter, v8::AccessorNameSetterCallback setter, void *data = nullptr);
 
-    bool defineProperty(const std::initializer_list<const char *> &names, v8::AccessorNameGetterCallback getter, v8::AccessorNameSetterCallback setter);
+    bool defineProperty(const std::initializer_list<const char *> &names, v8::AccessorNameGetterCallback getter, v8::AccessorNameSetterCallback setter, void *data = nullptr);
 
     /**
          *  @brief Defines a static function with a callback. Only JavaScript constructor object will have this function.
@@ -139,6 +139,7 @@ private:
     Object *    _parent;
     Object *    _parentProto;
     Object *    _proto;
+    void *      _constructorData = nullptr;
 
     v8::FunctionCallback                       _ctor;
     v8::UniquePersistent<v8::FunctionTemplate> _ctorTemplate;
