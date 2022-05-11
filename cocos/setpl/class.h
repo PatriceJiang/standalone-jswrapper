@@ -394,7 +394,7 @@ public:
         return _ctx->kls->getProto();
     }
 
-    class_& withClass(const std::function<void(se::Class*)>& cb) {
+    class_& withRawClass(const std::function<void(se::Class*)>& cb) {
         _delayBlocks.emplace_back(cb);
         return *this;
     }

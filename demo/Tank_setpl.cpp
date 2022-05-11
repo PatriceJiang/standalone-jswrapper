@@ -29,7 +29,7 @@ bool js_register_war_Tank(se::Object *obj) {
         .function("power", &weapon_power)
         .function("addid", &weapon_add_id)
         .function("toString", &weapon_toString)
-        .withClass([](se::Class *kls) {
+        .withRawClass([](se::Class *kls) {
             // do something with se::Class* directly!
         })
         .install();
