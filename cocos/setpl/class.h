@@ -189,17 +189,17 @@ struct AccessorSet {
 };
 
 template <>
-struct AccessorGet<nullptr_t> {
-    using class_type  = nullptr_t;
-    using type        = nullptr_t;
-    using return_type = nullptr_t;
+struct AccessorGet<std::nullptr_t> {
+    using class_type  =std::nullptr_t;
+    using type        =std::nullptr_t;
+    using return_type =std::nullptr_t;
 };
 
 template <>
-struct AccessorSet<nullptr_t> {
-    using class_type = nullptr_t;
-    using type       = nullptr_t;
-    using value_type = nullptr_t;
+struct AccessorSet<std::nullptr_t> {
+    using class_type =std::nullptr_t;
+    using type       =std::nullptr_t;
+    using value_type =std::nullptr_t;
 };
 
 template <typename T, typename R>
@@ -221,8 +221,8 @@ struct AccessorSet<_R (T::*)(F)> {
 template <typename T, typename Getter, typename Setter>
 struct InstanceAttribute<AttributeAccessor<T, Getter, Setter>> : InstanceAttributeBase {
     using type              = T;
-    using get_accessor      = typename AccessorGet<Getter>;
-    using set_accessor      = typename AccessorSet<Setter>;
+    using get_accessor      = AccessorGet<Getter>;
+    using set_accessor      = AccessorSet<Setter>;
     using getter_type       = typename get_accessor::type;
     using setter_type       = typename set_accessor::type;
     using set_value_type    = std::remove_reference_t<std::remove_cv_t<typename set_accessor::value_type>>;
@@ -347,8 +347,8 @@ public:
 
 private:
     context_ *_ctx{nullptr};
-    template <typename T>
-    friend void genericConstructor(const v8::FunctionCallbackInfo<v8::Value> &_v8args);
+    template <typename R>
+    friend void genericConstructor(const v8::FunctionCallbackInfo<v8::Value> &);
 };
 
 template <typename T>
@@ -385,7 +385,7 @@ template <size_t N, typename Method>
 class_<T> &class_<T>::method(const char (&name)[N], Method method) {
     using MTYPE = InstanceMethod<Method>;
     //static_assert(!std::is_same_v<void, InstanceMethod<Method>::return_type>);
-    static_assert(std::is_same<MTYPE::class_type, T>::value);
+    static_assert(std::is_same<typename MTYPE::class_type, T>::value);
     static_assert(std::is_member_function_pointer_v<Method>);
     auto *methodp        = new MTYPE();
     methodp->fnPtr       = method;
@@ -401,7 +401,7 @@ template <size_t N, typename Field>
 class_<T> &class_<T>::field(const char (&name)[N], Field field) {
     static_assert(std::is_member_pointer<Field>::value);
     using FTYPE = InstanceField<Field>;
-    static_assert(std::is_same<FTYPE::class_type, T>::value);
+    static_assert(std::is_same<typename FTYPE::class_type, T>::value);
     auto *fieldp       = new FTYPE();
     fieldp->fieldPtr   = field;
     fieldp->field_name = name;
@@ -426,7 +426,7 @@ class_<T> &class_<T>::attribute(const char (&name)[N], Getter getter, Setter set
 // v8 only
 template <typename T>
 void genericConstructor(const v8::FunctionCallbackInfo<v8::Value> &_v8args) {
-    using context_type       = class_<T>::context_;
+    using context_type       = typename class_<T>::context_;
     v8::Isolate *   _isolate = _v8args.GetIsolate();
     v8::HandleScope _hs(_isolate);
     bool            ret = false;
