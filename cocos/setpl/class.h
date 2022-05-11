@@ -56,6 +56,12 @@ struct Constructor<TypeList<T, ARGS...>> : ConstructorBase {
     }
 };
 
+struct FinalizerBase {
+    virtual bool destruct(se::State &) = 0;
+};
+
+
+
 struct InstanceMethodBase {
     std::string  class_name;
     std::string  method_name;
@@ -329,7 +335,8 @@ public:
         std::vector<std::tuple<std::string, InstanceMethodBase *>>    methods;
         std::vector<std::tuple<std::string, InstanceMethodBase *>>    _staticMethods;
         std::vector<std::tuple<std::string, InstanceMethodBase *>>    _staticAttributes;
-        std::vector<std::tuple<std::string, ConstructorBase *>>       constructors;
+        std::vector< ConstructorBase *>       constructors;
+        std::vector<FinalizerBase *>                                  finalizers;
         std::string                                                   className;
         se::Class *                                                   kls         = nullptr;
         se::Object *                                                  nsObject    = nullptr;
@@ -364,6 +371,8 @@ public:
 
     template <typename... ARGS>
     class_ &ctor();
+
+    class_ &finalizer();
 
     template <size_t N, typename Method>
     class_ &function(const char (&name)[N], Method method);
@@ -415,7 +424,7 @@ class_<T> &class_<T>::ctor() {
     //static_assert(!std::is_same_v<void, InstanceMethod<Method>::return_type>);
     auto *constructp      = new CTYPE();
     constructp->arg_count = sizeof...(ARGS);
-    _ctx->constructors.emplace_back("_ctor", constructp);
+    _ctx->constructors.emplace_back(constructp);
     return *this;
 }
 
@@ -479,8 +488,8 @@ void genericConstructor(const v8::FunctionCallbackInfo<v8::Value> &_v8args) {
 
     assert(!self->constructors.empty());
     for (auto &ctor : self->constructors) {
-        if (std::get<1>(ctor)->arg_count == args.size()) {
-            ret = std::get<1>(ctor)->construct(state);
+        if (ctor->arg_count == args.size()) {
+            ret = ctor->construct(state);
             if (ret) break;
         }
     }
