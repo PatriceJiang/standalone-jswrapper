@@ -70,21 +70,11 @@ template <typename T, typename R, typename... ARGS>
 struct InstanceMethod<R (T::*)(ARGS...)> : InstanceMethodBase {
     using type                          = R (T::*)(ARGS...);
     using return_type                   = R;
-    using class_type                    = T;
+    using class_type                    = std::remove_cv_t<T>;
     constexpr static size_t argN        = sizeof...(ARGS);
     constexpr static bool   return_void = std::is_same<void, R>::value;
 
     type fnPtr = nullptr;
-
-    //constexpr auto cal_signature() {
-    //    return class_name + "::" + method_name + "/" + FunctionSignature<R, ARGS>::signature().data();
-    //}
-
-    //template <size_t... indexes>
-    //bool convert_all(const se::ValueArray &jsArgs, std::tuple<ARGS...> &args, se::Object *ctx, std::index_sequence<indexes...>) const {
-    //    std::array<bool, sizeof...(indexes)> all = {(sevalue_to_native(jsArgs[indexes], &std::get<indexes>(args), ctx), ...)};
-    //    return true;
-    //}
 
     template <typename... ARGS_HT, size_t... indexes>
     R callWithTuple(T *self, std::tuple<ARGS_HT...> &args, std::index_sequence<indexes...>) const {
@@ -92,23 +82,72 @@ struct InstanceMethod<R (T::*)(ARGS...)> : InstanceMethodBase {
     }
 
     bool invoke(se::State &state) const override {
-        constexpr auto                                             indexes{std::make_index_sequence<sizeof...(ARGS)>()};
-        T *                                                        self       = reinterpret_cast<T *>(state.nativeThisObject());
-        se::Object *                                               thisObject = state.thisObject();
-        std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
-        const auto &                                               jsArgs = state.args();
+        constexpr auto indexes{std::make_index_sequence<sizeof...(ARGS)>()};
+        T *            self       = reinterpret_cast<T *>(state.nativeThisObject());
+        se::Object *   thisObject = state.thisObject();
+        const auto &   jsArgs     = state.args();
         if (argN != jsArgs.size()) {
             SE_LOGE("incorret argument size %d, expect %d\n", jsArgs.size(), argN);
             return false;
         }
-        convert_js_args_to_tuple(jsArgs, args, thisObject, indexes);
-        if constexpr (return_void) {
-            callWithTuple(self, args, indexes);
+        if constexpr (argN > 0) {
+            std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
+            convert_js_args_to_tuple(jsArgs, args, thisObject, indexes);
+            if constexpr (return_void) {
+                callWithTuple(self, args, indexes);
+            } else {
+                nativevalue_to_se(callWithTuple(self, args, indexes), state.rval(), thisObject);
+            }
         } else {
-            se::Value r;
-            nativevalue_to_se(callWithTuple(self, args, indexes), r, thisObject);
+            if constexpr (return_void) {
+                (*fnPtr)(self);
+            } else {
+                nativevalue_to_se((*fnPtr)(self), state.rval(), thisObject);
+            }
         }
+        return true;
+    }
+};
 
+template <typename T, typename R, typename... ARGS>
+struct InstanceMethod<R (*)(T *, ARGS...)> : InstanceMethodBase {
+    using type                          = R (*)(T *, ARGS...);
+    using return_type                   = R;
+    using class_type                    = std::remove_cv_t<T>;
+    constexpr static size_t argN        = sizeof...(ARGS);
+    constexpr static bool   return_void = std::is_same<void, R>::value;
+
+    type fnPtr = nullptr;
+
+    template <typename... ARGS_HT, size_t... indexes>
+    R callWithTuple(T *self, std::tuple<ARGS_HT...> &args, std::index_sequence<indexes...>) const {
+        return (*fnPtr)(reinterpret_cast<T *>(self), std::get<indexes>(args).value()...);
+    }
+
+    bool invoke(se::State &state) const override {
+        constexpr auto indexes{std::make_index_sequence<sizeof...(ARGS)>()};
+        T *            self       = reinterpret_cast<T *>(state.nativeThisObject());
+        se::Object *   thisObject = state.thisObject();
+        const auto &   jsArgs     = state.args();
+        if (argN != jsArgs.size()) {
+            SE_LOGE("incorret argument size %d, expect %d\n", jsArgs.size(), argN);
+            return false;
+        }
+        if constexpr (argN > 0) {
+            std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
+            convert_js_args_to_tuple(jsArgs, args, thisObject, indexes);
+            if constexpr (return_void) {
+                callWithTuple(self, args, indexes);
+            } else {
+                nativevalue_to_se(callWithTuple(self, args, indexes), state.rval(), thisObject);
+            }
+        } else {
+            if constexpr (return_void) {
+                (*fnPtr)(self);
+            } else {
+                nativevalue_to_se((*fnPtr)(self), state.rval(), thisObject);
+            }
+        }
         return true;
     }
 };
@@ -176,30 +215,30 @@ struct AttributeAccessor;
 
 template <typename T>
 struct AccessorGet {
-    using type = void;
+    using type        = void;
     using return_type = void;
-    using class_type = void;
+    using class_type  = void;
 };
 
 template <typename T>
 struct AccessorSet {
-    using type = void;
+    using type       = void;
     using value_type = void;
     using class_type = void;
 };
 
 template <>
 struct AccessorGet<std::nullptr_t> {
-    using class_type  =std::nullptr_t;
-    using type        =std::nullptr_t;
-    using return_type =std::nullptr_t;
+    using class_type  = std::nullptr_t;
+    using type        = std::nullptr_t;
+    using return_type = std::nullptr_t;
 };
 
 template <>
 struct AccessorSet<std::nullptr_t> {
-    using class_type =std::nullptr_t;
-    using type       =std::nullptr_t;
-    using value_type =std::nullptr_t;
+    using class_type = std::nullptr_t;
+    using type       = std::nullptr_t;
+    using value_type = std::nullptr_t;
 };
 
 template <typename T, typename R>
@@ -319,7 +358,7 @@ public:
     class_ &inherits(se::Object *parentProto);
 
     // set namespace object, parent
-    class_ &ns(se::Object *nsObj);
+    class_ &namespaceObject(se::Object *nsObj);
 
     bool install();
 
@@ -327,13 +366,13 @@ public:
     class_ &ctor();
 
     template <size_t N, typename Method>
-    class_ &method(const char (&name)[N], Method method);
+    class_ &function(const char (&name)[N], Method method);
 
     template <size_t N, typename Field>
     class_ &field(const char (&name)[N], Field field);
 
     template <size_t N, typename Getter, typename Setter>
-    class_ &attribute(const char (&name)[N], Getter getter, Setter setter);
+    class_ &property(const char (&name)[N], Getter getter, Setter setter);
 
     template <size_t N, typename R, typename... ARGS>
     class_ &static_method(const char (&name)[N], typename StaticMethod<R, ARGS...>::type method);
@@ -364,7 +403,7 @@ class_<T> &class_<T>::inherits(se::Object *obj) {
 }
 
 template <typename T>
-class_<T> &class_<T>::ns(se::Object *nsobj) {
+class_<T> &class_<T>::namespaceObject(se::Object *nsobj) {
     _ctx->nsObject = nsobj;
     return *this;
 }
@@ -382,11 +421,11 @@ class_<T> &class_<T>::ctor() {
 
 template <typename T>
 template <size_t N, typename Method>
-class_<T> &class_<T>::method(const char (&name)[N], Method method) {
+class_<T> &class_<T>::function(const char (&name)[N], Method method) {
     using MTYPE = InstanceMethod<Method>;
     //static_assert(!std::is_same_v<void, InstanceMethod<Method>::return_type>);
     static_assert(std::is_same<typename MTYPE::class_type, T>::value);
-    static_assert(std::is_member_function_pointer_v<Method>);
+    //static_assert(std::is_member_function_pointer_v<Method>);
     auto *methodp        = new MTYPE();
     methodp->fnPtr       = method;
     methodp->method_name = name;
@@ -412,7 +451,7 @@ class_<T> &class_<T>::field(const char (&name)[N], Field field) {
 
 template <typename T>
 template <size_t N, typename Getter, typename Setter>
-class_<T> &class_<T>::attribute(const char (&name)[N], Getter getter, Setter setter) {
+class_<T> &class_<T>::property(const char (&name)[N], Getter getter, Setter setter) {
     using ATYPE       = InstanceAttribute<AttributeAccessor<T, Getter, Setter>>;
     auto *attrp       = new ATYPE();
     attrp->getterPtr  = ATYPE::has_getter ? getter : nullptr;

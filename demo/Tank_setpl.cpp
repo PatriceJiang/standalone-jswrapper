@@ -3,26 +3,31 @@
 #include "Tank.h"
 #include "class.h"
 
+std::string weapon_power(const war::Weapon* w) {
+    return "godgodogd";
+}
+
 bool js_register_war_Tank(se::Object *obj) {
     setpl::class_<war::Weapon> weapon("Weapon");
 
-    weapon.ns(obj)
+    weapon.namespaceObject(obj)
         .ctor<int>()
-        .method("fire2", &war::Weapon::fire2)
+        .function("fire2", &war::Weapon::fire2)
+        .function("power", &weapon_power)
        .install();
 
     setpl::class_<war::Tank> tank("Tank2");
-    tank.ns(obj)
+    tank.namespaceObject(obj)
         .inherits(weapon.prototype())
         .ctor<std::string>()
         .ctor<int, std::string>()
-        .attribute("name", &war::Tank::getName, &war::Tank::setName)
-        .method("fire", static_cast<void (war::Tank::*)(std::string)>(&war::Tank::fire))
-        .method("fire", static_cast<void (war::Tank::*)(float, float, float)>(&war::Tank::fire))
+        .property("name", &war::Tank::getName, &war::Tank::setName)
+        .function("fire", static_cast<void (war::Tank::*)(std::string)>(&war::Tank::fire))
+        .function("fire", static_cast<void (war::Tank::*)(float, float, float)>(&war::Tank::fire))
         .field("id", &war::Tank::id)
-        .attribute("badId", &war::Tank::badID, &war::Tank::updateBadId)
-        .attribute("readOnlyId", &war::Tank::badID, nullptr)
-        .attribute("writeOnlyId", nullptr, &war::Tank::updateBadId)
+        .property("badId", &war::Tank::badID, &war::Tank::updateBadId)
+        .property("readOnlyId", &war::Tank::badID, nullptr)
+        .property("writeOnlyId", nullptr, &war::Tank::updateBadId)
         .install();
 
     return true;

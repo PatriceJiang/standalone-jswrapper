@@ -23,7 +23,9 @@ console.log(`run script hello.js`);
 
 // let w = new Weapon(333,"Sdfs");
 let w = new Weapon(333);
-w.fire2("sdfsfd");
+w.fire2(`sdfsfd power ${w.power()}`);
+
+
 
 
 console.log(`run script end!!`);
