@@ -170,6 +170,18 @@ struct AccessorGet<R(T::*)> {
     using type        = R(T::*);
     using return_type = R;
 };
+template <>
+struct AccessorGet<nullptr_t> {
+    using type        = nullptr_t;
+    using return_type = nullptr_t;
+};
+
+template <>
+struct AccessorSet<nullptr_t> {
+    using type       = nullptr_t;
+    using value_type = nullptr_t;
+};
+
 template <typename T, typename _R, typename F>
 struct AccessorSet<_R (T::*)(F)> {
     using type                = _R (T::*)(F);
@@ -185,26 +197,35 @@ struct InstanceAttribute<AttributeAccessor<T, Getter, Setter>> : InstanceAttribu
     using set_value_type = std::remove_reference_t<std::remove_cv_t<typename AccessorSet<Setter>::value_type>>;
     using get_value_type = std::remove_reference_t<std::remove_cv_t<typename AccessorGet<Getter>::return_type>>;
 
-    static_assert(std::is_member_function_pointer<Getter>::value);
-    static_assert(std::is_member_function_pointer<Setter>::value);
+    constexpr static bool has_getter = !std::is_same_v<std::nullptr_t, getter_type>;
+    constexpr static bool has_setter = !std::is_same_v<std::nullptr_t, setter_type>;
+
+    static_assert(!has_getter || std::is_member_function_pointer<Getter>::value);
+    static_assert(!has_setter || std::is_member_function_pointer<Setter>::value);
 
     setter_type setterPtr;
     getter_type getterPtr;
 
     bool get(se::State &state) const override {
-        T *         self       = reinterpret_cast<T *>(state.nativeThisObject());
-        se::Object *thisObject = state.thisObject();
-        return nativevalue_to_se((self->*getterPtr)(), state.rval(), thisObject);
+        if constexpr (has_getter) {
+            T *         self       = reinterpret_cast<T *>(state.nativeThisObject());
+            se::Object *thisObject = state.thisObject();
+            return nativevalue_to_se((self->*getterPtr)(), state.rval(), thisObject);
+        }
+        return false;
     }
 
     bool set(se::State &state) const override {
-        T *                                                             self       = reinterpret_cast<T *>(state.nativeThisObject());
-        se::Object *                                                    thisObject = state.thisObject();
-        auto &                                                          args       = state.args();
-        HolderType<set_value_type, std::is_reference_v<set_value_type>> temp;
-        sevalue_to_native(args[0], &(temp.data), thisObject);
-        (self->*setterPtr)(temp.value());
-        return true;
+        if constexpr (has_setter) {
+            T *                                                             self       = reinterpret_cast<T *>(state.nativeThisObject());
+            se::Object *                                                    thisObject = state.thisObject();
+            auto &                                                          args       = state.args();
+            HolderType<set_value_type, std::is_reference_v<set_value_type>> temp;
+            sevalue_to_native(args[0], &(temp.data), thisObject);
+            (self->*setterPtr)(temp.value());
+            return true;
+        }
+        return false;
     }
 };
 
@@ -273,7 +294,7 @@ private:
 
 template <typename T>
 class_<T>::class_(const std::string &name) {
-    _ctx             = new context_;
+    _ctx            = new context_;
     _ctx->className = name;
 }
 
@@ -319,10 +340,11 @@ class_<T> &class_<T>::field(const char (&name)[N], Field field) {
 template <typename T>
 template <size_t N, typename Getter, typename Setter>
 class_<T> &class_<T>::attribute(const char (&name)[N], Getter getter, Setter setter) {
-    using ATYPE       = InstanceAttribute<AttributeAccessor<T, Getter, Setter>>;
-    auto *attrp       = new ATYPE();
-    attrp->getterPtr  = getter;
-    attrp->setterPtr  = setter;
+    using ATYPE      = InstanceAttribute<AttributeAccessor<T, Getter, Setter>>;
+    auto *attrp      = new ATYPE();
+    attrp->getterPtr = ATYPE::has_getter ? getter : nullptr;
+    attrp->setterPtr = ATYPE::has_setter ? setter : nullptr;
+    ;
     attrp->class_name = _ctx->className;
     attrp->attr_name  = name;
     _ctx->attributes.emplace_back(name, attrp);
