@@ -33,11 +33,20 @@ bool convert_js_args_to_tuple(const se::ValueArray &jsArgs, std::tuple<ARGS...> 
 template <typename T, typename... ARGS>
 struct Constructor<TypeList<T, ARGS...>> : ConstructorBase {
     bool construct(se::State &state) {
-        std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
-        auto &                                                     jsArgs = state.args();
-        convert_js_args_to_tuple(jsArgs, args, nullptr, std::make_index_sequence<sizeof...(ARGS)>());
-        T *self = constructWithTuple(args, std::make_index_sequence<sizeof...(ARGS)>());
-        state.thisObject()->setPrivateData(self);
+        if ((sizeof...(ARGS)) != state.args().size()) {
+            return false;
+        }
+
+        if constexpr (sizeof...(ARGS) > 0) {
+            std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
+            auto &                                                     jsArgs = state.args();
+            convert_js_args_to_tuple(jsArgs, args, nullptr, std::make_index_sequence<sizeof...(ARGS)>());
+            T *self = constructWithTuple(args, std::make_index_sequence<sizeof...(ARGS)>());
+            state.thisObject()->setPrivateData(self);
+        } else {
+            T *self = new T;
+            state.thisObject()->setPrivateData(self);
+        }
         return true;
     }
 
@@ -61,6 +70,7 @@ template <typename T, typename R, typename... ARGS>
 struct InstanceMethod<R (T::*)(ARGS...)> : InstanceMethodBase {
     using type                          = R (T::*)(ARGS...);
     using return_type                   = R;
+    using class_type                    = T;
     constexpr static size_t argN        = sizeof...(ARGS);
     constexpr static bool   return_void = std::is_same<void, R>::value;
 
@@ -87,6 +97,10 @@ struct InstanceMethod<R (T::*)(ARGS...)> : InstanceMethodBase {
         se::Object *                                               thisObject = state.thisObject();
         std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
         const auto &                                               jsArgs = state.args();
+        if (argN != jsArgs.size()) {
+            SE_LOGE("incorret argument size %d, expect %d\n", jsArgs.size(), argN);
+            return false;
+        }
         convert_js_args_to_tuple(jsArgs, args, thisObject, indexes);
         if constexpr (return_void) {
             callWithTuple(self, args, indexes);
@@ -127,6 +141,7 @@ struct InstanceField;
 template <typename T, typename F>
 struct InstanceField<F(T::*)> : InstanceFieldBase {
     using type        = F(T::*);
+    using class_type  = T;
     using return_type = std::remove_cv_t<F>;
 
     type fieldPtr;
@@ -160,30 +175,44 @@ template <typename T, typename G, typename S>
 struct AttributeAccessor;
 
 template <typename T>
-struct AccessorGet;
+struct AccessorGet {
+    using type = void;
+    using return_type = void;
+    using class_type = void;
+};
 
 template <typename T>
-struct AccessorSet;
-
-template <typename T, typename R>
-struct AccessorGet<R(T::*)> {
-    using type        = R(T::*);
-    using return_type = R;
+struct AccessorSet {
+    using type = void;
+    using value_type = void;
+    using class_type = void;
 };
+
 template <>
 struct AccessorGet<nullptr_t> {
+    using class_type  = nullptr_t;
     using type        = nullptr_t;
     using return_type = nullptr_t;
 };
 
 template <>
 struct AccessorSet<nullptr_t> {
+    using class_type = nullptr_t;
     using type       = nullptr_t;
     using value_type = nullptr_t;
 };
 
+template <typename T, typename R>
+struct AccessorGet<R(T::*)> {
+    using class_type  = T;
+    using type        = R(T::*);
+    using return_type = R;
+    static_assert(!std::is_void_v<R>);
+};
+
 template <typename T, typename _R, typename F>
 struct AccessorSet<_R (T::*)(F)> {
+    using class_type          = T;
     using type                = _R (T::*)(F);
     using value_type          = F;
     using ignored_return_type = _R;
@@ -191,17 +220,23 @@ struct AccessorSet<_R (T::*)(F)> {
 
 template <typename T, typename Getter, typename Setter>
 struct InstanceAttribute<AttributeAccessor<T, Getter, Setter>> : InstanceAttributeBase {
-    using type           = T;
-    using setter_type    = typename AccessorSet<Setter>::type;
-    using getter_type    = typename AccessorGet<Getter>::type;
-    using set_value_type = std::remove_reference_t<std::remove_cv_t<typename AccessorSet<Setter>::value_type>>;
-    using get_value_type = std::remove_reference_t<std::remove_cv_t<typename AccessorGet<Getter>::return_type>>;
+    using type              = T;
+    using get_accessor      = typename AccessorGet<Getter>;
+    using set_accessor      = typename AccessorSet<Setter>;
+    using getter_type       = typename get_accessor::type;
+    using setter_type       = typename set_accessor::type;
+    using set_value_type    = std::remove_reference_t<std::remove_cv_t<typename set_accessor::value_type>>;
+    using get_value_type    = std::remove_reference_t<std::remove_cv_t<typename get_accessor::return_type>>;
+    using getter_class_type = typename get_accessor::class_type;
+    using setter_class_type = typename set_accessor::class_type;
 
     constexpr static bool has_getter = !std::is_same_v<std::nullptr_t, getter_type>;
     constexpr static bool has_setter = !std::is_same_v<std::nullptr_t, setter_type>;
 
     static_assert(!has_getter || std::is_member_function_pointer<Getter>::value);
     static_assert(!has_setter || std::is_member_function_pointer<Setter>::value);
+    static_assert(!has_getter || std::is_same<T, getter_class_type>::value);
+    static_assert(!has_setter || std::is_same<T, setter_class_type>::value);
 
     setter_type setterPtr;
     getter_type getterPtr;
@@ -247,11 +282,8 @@ struct StaticAttribute {
 
 using SeCallbackType = bool(se::State &);
 
-template <typename T>
-class class_ {
+class context_db_ {
 public:
-    using class_type = T;
-
     struct context_ {
         std::vector<std::tuple<std::string, InstanceAttributeBase *>> attributes;
         std::vector<std::tuple<std::string, InstanceFieldBase *>>     fields;
@@ -260,13 +292,36 @@ public:
         std::vector<std::tuple<std::string, InstanceMethodBase *>>    _staticAttributes;
         std::vector<std::tuple<std::string, ConstructorBase *>>       constructors;
         std::string                                                   className;
-        se::Class *                                                   kls = nullptr;
+        se::Class *                                                   kls         = nullptr;
+        se::Object *                                                  nsObject    = nullptr;
+        se::Object *                                                  parentProto = nullptr;
     };
+    inline context_ *operator[](const std::string &key) {
+        return this->operator[](key.c_str());
+    }
+    context_ *          operator[](const char *key);
+    static context_db_ &instance();
+    static void         reset();
 
+private:
+    std::map<std::string, context_ *> _contexts;
+};
+
+template <typename T>
+class class_ {
+public:
+    using class_type = T;
+    using context_   = context_db_::context_;
+
+    class_(context_ *ctx) : _ctx(ctx) {}
     class_(const std::string &name);
 
-    class_ &inherits(class_ &superClass);
-    bool    install();
+    class_ &inherits(se::Object *parentProto);
+
+    // set namespace object, parent
+    class_ &ns(se::Object *nsObj);
+
+    bool install();
 
     template <typename... ARGS>
     class_ &ctor();
@@ -286,6 +341,10 @@ public:
     template <size_t N, typename A>
     class_ &static_attribute(const char (&name)[N], typename StaticAttribute<A>::getter_type getter, typename StaticAttribute<A>::setter_type setter);
 
+    se::Object *prototype() {
+        return _ctx->kls->getProto();
+    }
+
 private:
     context_ *_ctx{nullptr};
     template <typename T>
@@ -294,8 +353,20 @@ private:
 
 template <typename T>
 class_<T>::class_(const std::string &name) {
-    _ctx            = new context_;
+    _ctx            = context_db_::instance()[name];
     _ctx->className = name;
+}
+
+template <typename T>
+class_<T> &class_<T>::inherits(se::Object *obj) {
+    _ctx->parentProto = obj;
+    return *this;
+}
+
+template <typename T>
+class_<T> &class_<T>::ns(se::Object *nsobj) {
+    _ctx->nsObject = nsobj;
+    return *this;
 }
 
 template <typename T>
@@ -314,6 +385,7 @@ template <size_t N, typename Method>
 class_<T> &class_<T>::method(const char (&name)[N], Method method) {
     using MTYPE = InstanceMethod<Method>;
     //static_assert(!std::is_same_v<void, InstanceMethod<Method>::return_type>);
+    static_assert(std::is_same<MTYPE::class_type, T>::value);
     static_assert(std::is_member_function_pointer_v<Method>);
     auto *methodp        = new MTYPE();
     methodp->fnPtr       = method;
@@ -328,7 +400,8 @@ template <typename T>
 template <size_t N, typename Field>
 class_<T> &class_<T>::field(const char (&name)[N], Field field) {
     static_assert(std::is_member_pointer<Field>::value);
-    using FTYPE        = InstanceField<Field>;
+    using FTYPE = InstanceField<Field>;
+    static_assert(std::is_same<FTYPE::class_type, T>::value);
     auto *fieldp       = new FTYPE();
     fieldp->fieldPtr   = field;
     fieldp->field_name = name;
@@ -340,11 +413,10 @@ class_<T> &class_<T>::field(const char (&name)[N], Field field) {
 template <typename T>
 template <size_t N, typename Getter, typename Setter>
 class_<T> &class_<T>::attribute(const char (&name)[N], Getter getter, Setter setter) {
-    using ATYPE      = InstanceAttribute<AttributeAccessor<T, Getter, Setter>>;
-    auto *attrp      = new ATYPE();
-    attrp->getterPtr = ATYPE::has_getter ? getter : nullptr;
-    attrp->setterPtr = ATYPE::has_setter ? setter : nullptr;
-    ;
+    using ATYPE       = InstanceAttribute<AttributeAccessor<T, Getter, Setter>>;
+    auto *attrp       = new ATYPE();
+    attrp->getterPtr  = ATYPE::has_getter ? getter : nullptr;
+    attrp->setterPtr  = ATYPE::has_setter ? setter : nullptr;
     attrp->class_name = _ctx->className;
     attrp->attr_name  = name;
     _ctx->attributes.emplace_back(name, attrp);
@@ -357,7 +429,7 @@ void genericConstructor(const v8::FunctionCallbackInfo<v8::Value> &_v8args) {
     using context_type       = class_<T>::context_;
     v8::Isolate *   _isolate = _v8args.GetIsolate();
     v8::HandleScope _hs(_isolate);
-    bool            ret = true;
+    bool            ret = false;
     se::ValueArray  args;
     args.reserve(10);
     se::internal::jsToSeArgs(_v8args, args);
@@ -370,7 +442,7 @@ void genericConstructor(const v8::FunctionCallbackInfo<v8::Value> &_v8args) {
     for (auto &ctor : self->constructors) {
         if (std::get<1>(ctor)->arg_count == args.size()) {
             ret = std::get<1>(ctor)->construct(state);
-            break;
+            if (ret) break;
         }
     }
     if (!ret) {
@@ -399,7 +471,7 @@ void genericAccessorSet(v8::Local<v8::Name> property, v8::Local<v8::Value> _valu
     se::State state(thisObject, privateObject, args);
     ret = attr->set(state);
     if (!ret) {
-        SE_LOGE("[ERROR] Failed to invoke %s, location: %s:%d\n", attr->name().c_str(), __FILE__, __LINE__);
+        SE_LOGE("[ERROR] Failed to invoke set %s, location: %s:%d\n", attr->name().c_str(), __FILE__, __LINE__);
     }
 }
 template <typename ContextType>
@@ -420,34 +492,20 @@ void genericAccessorGet(v8::Local<v8::Name>                        property,
     se::internal::setReturnValue(state.rval(), _v8args);
 }
 
-void genericFunction(const v8::FunctionCallbackInfo<v8::Value> &_v8args) {
-    void *              ctx    = _v8args.Data().IsEmpty() ? nullptr : _v8args.Data().As<v8::External>()->Value();
-    InstanceMethodBase *method = reinterpret_cast<InstanceMethodBase *>(ctx);
-    assert(ctx);
-    bool                   ret      = false;
-    v8::Isolate *          _isolate = _v8args.GetIsolate();
-    v8::HandleScope        _hs(_isolate);
-    se::ValueArray &       args = se::gValueArrayPool.get(_v8args.Length());
-    se::CallbackDepthGuard depthGuard{args, se::gValueArrayPool._depth};
-    se::internal::jsToSeArgs(_v8args, args);
-    se::PrivateObjectBase *privateObject = static_cast<se::PrivateObjectBase *>(se::internal::getPrivate(_isolate, _v8args.This(), 0));
-    se::Object *           thisObject    = reinterpret_cast<se::Object *>(se::internal::getPrivate(_isolate, _v8args.This(), 1));
-    se::State              state(thisObject, privateObject, args);
-    ret = method->invoke(state);
-    if (!ret) {
-        SE_LOGE("[ERROR] Failed to invoke %s, location: %s:%d\n", method->method_name.c_str(), __FILE__, __LINE__);
-    }
-    se::internal::setReturnValue(state.rval(), _v8args);
-}
+void genericFunction(const v8::FunctionCallbackInfo<v8::Value> &_v8args);
 
 template <typename T>
 bool class_<T>::install() {
     constexpr auto *fn = &genericConstructor<T>;
+    assert(_ctx->nsObject);
 
-    //FIXME: handle inheritance
-    auto *globalThis = se::ScriptEngine::getInstance()->getGlobalObject();
+    if (_ctx->constructors.empty()) {
+        if constexpr (std::is_default_constructible<T>::value) {
+            ctor();
+        }
+    }
 
-    _ctx->kls = se::Class::create(_ctx->className, globalThis, nullptr, fn, _ctx);
+    _ctx->kls = se::Class::create(_ctx->className, _ctx->nsObject, _ctx->parentProto, fn, _ctx);
 
     auto *getter = &genericAccessorGet<InstanceAttributeBase>;
     auto *setter = &genericAccessorSet<InstanceAttributeBase>;

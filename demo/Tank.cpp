@@ -3,11 +3,11 @@
 
 namespace war {
 
-Tank::Tank(const std::string &name) {
+Tank::Tank(const std::string &name):Weapon(0) {
     this->name = name;
 }
 
-Tank::Tank(int i, const std::string &name) {
+Tank::Tank(int i, const std::string &name):Weapon(0) {
     id         = i;
     this->name = name;
 }
