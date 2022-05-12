@@ -415,7 +415,7 @@ struct StaticMethod<R (*)(ARGS...)> : StaticMethodBase {
         if constexpr (return_void) {
             callWithTuple(args, indexes);
         } else {
-            nativevalue_to_se(callWithTuple(args, indexes), state.rval(), thisObject);
+            nativevalue_to_se(callWithTuple(args, indexes), state.rval(), nullptr);
         }
         return true;
     }
