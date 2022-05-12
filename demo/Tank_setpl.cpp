@@ -28,7 +28,7 @@ bool js_register_war_Tank(se::Object *obj) {
     setpl::class_<war::Weapon> weapon("Weapon");
 
     weapon.namespaceObject(obj)
-        .ctor(setpl::optional_lambda([](float r) { return new war::Weapon(); }))
+        .ctor(+[](float r) { return new war::Weapon(); })
         .ctor<int>()
         .function("fire2", &war::Weapon::fire2)
         .function("power", &weapon_power)
@@ -38,9 +38,6 @@ bool js_register_war_Tank(se::Object *obj) {
             // do something with se::Class* directly!
             std::cout << "class name ---> " << kls->getName() << std::endl;
         })
-    /*    .gcCallback(setpl::optional_lambda([&](war::Weapon *w) {
-            std::cout << sizeof(weapon) << " What the fuck1 ... trying to gc me ?? " << w->__id << std::endl;
-        }))*/
         .gcCallback(setpl::optional_lambda([](war::Weapon *w) {
             std::cout << "What the fuck2 ... trying to gc me ?? " << w->__id << std::endl;
         }))

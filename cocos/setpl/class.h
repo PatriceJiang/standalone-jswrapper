@@ -14,6 +14,36 @@
 
 namespace setpl {
 
+namespace internal {
+template <typename T>
+struct remove_class;
+template <typename C, typename R, typename... ARGS>
+struct remove_class<R (C::*)(ARGS...)> {
+    using type = R(ARGS...);
+};
+template <typename C, typename R, typename... ARGS>
+struct remove_class<R (C::*)(ARGS...) const> {
+    using type = R(ARGS...);
+};
+template <typename C, typename R, typename... ARGS>
+struct remove_class<R (C::*)(ARGS...) volatile> {
+    using type = R(ARGS...);
+};
+template <typename C, typename R, typename... ARGS>
+struct remove_class<R (C::*)(ARGS...) const volatile> {
+    using type = R(ARGS...);
+};
+
+template <typename Lambda>
+using LambdaSignature = typename remove_class<decltype(&Lambda::operator())>::type;
+
+} // namespace internal
+
+template <typename Lambda>
+typename internal::LambdaSignature<Lambda> *optional_lambda(const Lambda &f) {
+    return f;
+}
+
 template <typename... ARGS>
 struct TypeList;
 
@@ -421,8 +451,9 @@ public:
 
     template <typename F>
     class_ &ctor(F);
-
-    class_ &gcCallback(void (*)(T *));
+    
+    template <typename F>
+    class_ &gcCallback(F);
 
     template <size_t N, typename Method>
     class_ &function(const char (&name)[N], Method method);
@@ -497,7 +528,8 @@ class_<T> &class_<T>::ctor(F c) {
 }
 
 template <typename T>
-class_<T> &class_<T>::gcCallback(void (*cb)(T *)) {
+template <typename F>
+class_<T> &class_<T>::gcCallback(F cb) {
     auto *f = new GcCallback<T>();
     f->func = cb;
     _ctx->gcCallbacks.emplace_back(f);
@@ -692,33 +724,4 @@ bool class_<T>::install() {
     return true;
 }
 
-namespace internal {
-template <typename T>
-struct remove_class;
-template <typename C, typename R, typename... ARGS>
-struct remove_class<R (C::*)(ARGS...)> {
-    using type = R(ARGS...);
-};
-template <typename C, typename R, typename... ARGS>
-struct remove_class<R (C::*)(ARGS...) const> {
-    using type = R(ARGS...);
-};
-template <typename C, typename R, typename... ARGS>
-struct remove_class<R (C::*)(ARGS...) volatile> {
-    using type = R(ARGS...);
-};
-template <typename C, typename R, typename... ARGS>
-struct remove_class<R (C::*)(ARGS...) const volatile> {
-    using type = R(ARGS...);
-};
-
-template <typename Lambda>
-using LambdaSignature = typename remove_class<decltype(&Lambda::operator())>::type;
-
-} // namespace internal
-
-template <typename Lambda>
-typename internal::LambdaSignature<Lambda> *optional_lambda(const Lambda &f) {
-    return f;
-}
 } // namespace setpl
