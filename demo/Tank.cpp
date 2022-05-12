@@ -3,11 +3,11 @@
 
 namespace war {
 
-Tank::Tank(const std::string &name):Weapon(0) {
+Tank::Tank(const std::string &name) : Weapon(0) {
     this->name = name;
 }
 
-Tank::Tank(int i, const std::string &name):Weapon(0) {
+Tank::Tank(int i, const std::string &name) : Weapon(0) {
     id         = i;
     this->name = name;
 }
@@ -17,7 +17,7 @@ void Tank::fire(float x, float y, float z) {
 }
 
 void Tank::fire(std::string targetName) {
-    std::cout << "Tank fire at target " << targetName << std::endl;
+    std::cout << "Tank[" << name << "] fire at target " << targetName << std::endl;
 }
 
 } // namespace war

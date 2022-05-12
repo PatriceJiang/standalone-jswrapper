@@ -26,9 +26,9 @@
 #pragma once
 
 #include <cassert>
+#include <cmath>
 #include <memory>
 #include <type_traits>
-#include <cmath>
 #include "base/Ptr.h"
 #include "base/RefCounted.h"
 
@@ -67,6 +67,8 @@ public:
     friend se::Object;
     friend se::State;
     friend se::ScriptEngine;
+
+    void *finalizerData{nullptr};
 };
 
 template <typename T>

@@ -26,6 +26,10 @@ let w = new Weapon(333);
 w.fire2(`sdfsfd power ${w.power()}`);
 w.fire2(`sdfsfd power ${w.addid(10000000)}`);
 
+
+let tank3 = new Tank2(8890, "Lion");
+tank3.fire("England");
+
 tank.load(w);
 
 

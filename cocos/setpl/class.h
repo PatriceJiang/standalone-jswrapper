@@ -8,6 +8,7 @@
 #include "jswrapper/Value.h"
 
 #include "conversions/jsb_conversions.h"
+#include "conversions/jsb_global.h"
 
 //#include "signature.h"
 
@@ -29,6 +30,10 @@ bool convert_js_args_to_tuple(const se::ValueArray &jsArgs, std::tuple<ARGS...> 
     std::array<bool, sizeof...(indexes)> all = {(sevalue_to_native(jsArgs[indexes], &std::get<indexes>(args).data, ctx), ...)};
     return true;
 }
+template <size_t... indexes>
+bool convert_js_args_to_tuple(const se::ValueArray &jsArgs, std::tuple<> &args, se::Object *ctx, std::index_sequence<indexes...>) {
+    return true;
+}
 
 template <typename T, typename... ARGS>
 struct Constructor<TypeList<T, ARGS...>> : ConstructorBase {
@@ -36,28 +41,76 @@ struct Constructor<TypeList<T, ARGS...>> : ConstructorBase {
         if ((sizeof...(ARGS)) != state.args().size()) {
             return false;
         }
+        se::PrivateObjectBase *                                    self{nullptr};
+        std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
+        auto &                                                     jsArgs = state.args();
+        convert_js_args_to_tuple(jsArgs, args, nullptr, std::make_index_sequence<sizeof...(ARGS)>());
+        self = constructWithTuple(args, std::make_index_sequence<sizeof...(ARGS)>());
+        state.thisObject()->setPrivateObject(self);
+        return true;
+    }
 
-        if constexpr (sizeof...(ARGS) > 0) {
-            std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
-            auto &                                                     jsArgs = state.args();
-            convert_js_args_to_tuple(jsArgs, args, nullptr, std::make_index_sequence<sizeof...(ARGS)>());
-            T *self = constructWithTuple(args, std::make_index_sequence<sizeof...(ARGS)>());
-            state.thisObject()->setPrivateData(self);
-        } else {
-            T *self = new T;
-            state.thisObject()->setPrivateData(self);
+    template <typename... ARGS_HT, size_t... indexes>
+    se::PrivateObjectBase *constructWithTuple(std::tuple<ARGS_HT...> &args, std::index_sequence<indexes...>) {
+        return JSB_MAKE_PRIVATE_OBJECT(T, std::get<indexes>(args).value()...);
+    }
+};
+
+template <typename T, typename... ARGS>
+struct Constructor<T *(*)(ARGS...)> : ConstructorBase {
+    using type = T *(*)(ARGS...);
+    type func;
+    bool construct(se::State &state) {
+        if ((sizeof...(ARGS)) != state.args().size()) {
+            return false;
         }
+        std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
+        auto &                                                     jsArgs = state.args();
+        convert_js_args_to_tuple(jsArgs, args, nullptr, std::make_index_sequence<sizeof...(ARGS)>());
+        auto *ptr = constructWithTuple(args, std::make_index_sequence<sizeof...(ARGS)>());
+        state.thisObject()->setPrivateData(ptr);
         return true;
     }
 
     template <typename... ARGS_HT, size_t... indexes>
     T *constructWithTuple(std::tuple<ARGS_HT...> &args, std::index_sequence<indexes...>) {
-        return new T(std::get<indexes>(args).value()...);
+        return (*func)(std::get<indexes>(args).value()...);
     }
 };
 
-struct FinalizerBase {
-    virtual bool destruct(se::State &) = 0;
+template <typename T, typename... ARGS>
+struct Constructor<std::function<T *(ARGS...)>> : ConstructorBase {
+    using type = std::function<T *(ARGS...)>;
+    type func;
+    bool construct(se::State &state) {
+        if ((sizeof...(ARGS)) != state.args().size()) {
+            return false;
+        }
+        std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
+        auto &                                                     jsArgs = state.args();
+        convert_js_args_to_tuple(jsArgs, args, nullptr, std::make_index_sequence<sizeof...(ARGS)>());
+        auto *ptr = constructWithTuple(args, std::make_index_sequence<sizeof...(ARGS)>());
+        state.thisObject()->setPrivateData(ptr);
+        return true;
+    }
+
+    template <typename... ARGS_HT, size_t... indexes>
+    T *constructWithTuple(std::tuple<ARGS_HT...> &args, std::index_sequence<indexes...>) {
+        return func(std::get<indexes>(args).value()...);
+    }
+};
+
+struct GcCallbackBase {
+    virtual void destruct(void *) = 0;
+};
+
+template <typename T>
+struct GcCallback : GcCallbackBase {
+    using type = void (*)(T *);
+    type func;
+    void destruct(void *p) override {
+        (*func)(reinterpret_cast<T *>(p));
+    }
 };
 
 struct InstanceMethodBase {
@@ -94,20 +147,12 @@ struct InstanceMethod<R (T::*)(ARGS...)> : InstanceMethodBase {
             SE_LOGE("incorret argument size %d, expect %d\n", jsArgs.size(), argN);
             return false;
         }
-        if constexpr (argN > 0) {
-            std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
-            convert_js_args_to_tuple(jsArgs, args, thisObject, indexes);
-            if constexpr (return_void) {
-                callWithTuple(self, args, indexes);
-            } else {
-                nativevalue_to_se(callWithTuple(self, args, indexes), state.rval(), thisObject);
-            }
+        std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
+        convert_js_args_to_tuple(jsArgs, args, thisObject, indexes);
+        if constexpr (return_void) {
+            callWithTuple(self, args, indexes);
         } else {
-            if constexpr (return_void) {
-                (*fnPtr)(self);
-            } else {
-                nativevalue_to_se((*fnPtr)(self), state.rval(), thisObject);
-            }
+            nativevalue_to_se(callWithTuple(self, args, indexes), state.rval(), thisObject);
         }
         return true;
     }
@@ -137,20 +182,12 @@ struct InstanceMethod<R (*)(T *, ARGS...)> : InstanceMethodBase {
             SE_LOGE("incorret argument size %d, expect %d\n", jsArgs.size(), argN);
             return false;
         }
-        if constexpr (argN > 0) {
-            std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
-            convert_js_args_to_tuple(jsArgs, args, thisObject, indexes);
-            if constexpr (return_void) {
-                callWithTuple(self, args, indexes);
-            } else {
-                nativevalue_to_se(callWithTuple(self, args, indexes), state.rval(), thisObject);
-            }
+        std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
+        convert_js_args_to_tuple(jsArgs, args, thisObject, indexes);
+        if constexpr (return_void) {
+            callWithTuple(self, args, indexes);
         } else {
-            if constexpr (return_void) {
-                (*fnPtr)(self);
-            } else {
-                nativevalue_to_se((*fnPtr)(self), state.rval(), thisObject);
-            }
+            nativevalue_to_se(callWithTuple(self, args, indexes), state.rval(), thisObject);
         }
         return true;
     }
@@ -337,7 +374,7 @@ public:
         std::vector<std::tuple<std::string, InstanceMethodBase *>>    _staticMethods;
         std::vector<std::tuple<std::string, InstanceMethodBase *>>    _staticAttributes;
         std::vector<ConstructorBase *>                                constructors;
-        std::vector<FinalizerBase *>                                  finalizers;
+        std::vector<GcCallbackBase *>                                 gcCallbacks;
         std::string                                                   className;
         se::Class *                                                   kls         = nullptr;
         se::Object *                                                  nsObject    = nullptr;
@@ -352,6 +389,15 @@ public:
 
 private:
     std::map<std::string, context_ *> _contexts;
+};
+
+template <typename T>
+struct FunctionWrapper;
+
+template <typename R, typename... ARGS>
+struct FunctionWrapper<R *(*)(ARGS...)> {
+    using type                        = R *(*)(ARGS...);
+    static constexpr size_t arg_count = sizeof...(ARGS);
 };
 
 template <typename T>
@@ -373,7 +419,10 @@ public:
     template <typename... ARGS>
     class_ &ctor();
 
-    class_ &finalizer();
+    template <typename F>
+    class_ &ctor(F);
+
+    class_ &gcCallback(void (*)(T *));
 
     template <size_t N, typename Method>
     class_ &function(const char (&name)[N], Method method);
@@ -394,14 +443,14 @@ public:
         return _ctx->kls->getProto();
     }
 
-    class_& withRawClass(const std::function<void(se::Class*)>& cb) {
+    class_ &withRawClass(void (*cb)(se::Class *)) {
         _delayBlocks.emplace_back(cb);
         return *this;
     }
 
 private:
-    context_ *_ctx{nullptr};
-    std::vector<std::function<void(se::Class *)>> _delayBlocks;
+    context_ *                         _ctx{nullptr};
+    std::vector<void (*)(se::Class *)> _delayBlocks;
     template <typename R>
     friend void genericConstructor(const v8::FunctionCallbackInfo<v8::Value> &);
 };
@@ -432,6 +481,26 @@ class_<T> &class_<T>::ctor() {
     auto *constructp      = new CTYPE();
     constructp->arg_count = sizeof...(ARGS);
     _ctx->constructors.emplace_back(constructp);
+    return *this;
+}
+
+template <typename T>
+template <typename F>
+class_<T> &class_<T>::ctor(F c) {
+    using FTYPE           = FunctionWrapper<F>;
+    using CTYPE           = Constructor<typename FTYPE::type>;
+    auto *constructp      = new CTYPE();
+    constructp->arg_count = FTYPE::arg_count;
+    constructp->func      = c;
+    _ctx->constructors.emplace_back(constructp);
+    return *this;
+}
+
+template <typename T>
+class_<T> &class_<T>::gcCallback(void (*cb)(T *)) {
+    auto *f = new GcCallback<T>();
+    f->func = cb;
+    _ctx->gcCallbacks.emplace_back(f);
     return *this;
 }
 
@@ -477,6 +546,20 @@ class_<T> &class_<T>::property(const char (&name)[N], Getter getter, Setter sett
     _ctx->attributes.emplace_back(name, attrp);
     return *this;
 }
+template <typename T>
+void genericGcCallback(se::PrivateObjectBase *privateObject) {
+    using context_type = typename class_<T>::context_;
+    if (privateObject == nullptr)
+        return;
+    auto se = se::ScriptEngine::getInstance();
+    se->_setGarbageCollecting(true);
+    auto *self    = reinterpret_cast<context_type *>(privateObject->finalizerData);
+    auto *thisPtr = privateObject->get<T>();
+    for (auto &d : self->gcCallbacks) {
+        d->destruct(thisPtr);
+    }
+    se->_setGarbageCollecting(false);
+}
 
 // v8 only
 template <typename T>
@@ -490,7 +573,10 @@ void genericConstructor(const v8::FunctionCallbackInfo<v8::Value> &_v8args) {
     se::internal::jsToSeArgs(_v8args, args);
     auto *      self       = reinterpret_cast<context_type *>(_v8args.Data().IsEmpty() ? nullptr : _v8args.Data().As<v8::External>()->Value());
     se::Object *thisObject = se::Object::_createJSObject(self->kls, _v8args.This());
-    //thisObject->_setFinalizeCallback(_SE(finalizeCb)); // TODO: common finalizer
+    if (!self->gcCallbacks.empty()) {
+        auto *finalizer = &genericGcCallback<T>;
+        thisObject->_setFinalizeCallback(finalizer);
+    }
     se::State state(thisObject, args);
 
     assert(!self->constructors.empty());
@@ -504,6 +590,10 @@ void genericConstructor(const v8::FunctionCallbackInfo<v8::Value> &_v8args) {
         SE_LOGE("[ERROR] Failed to invoke %s, location: %s:%d\n", "constructor", __FILE__, __LINE__);
     }
     assert(ret); // construction failure is not allowed.
+    if (!self->gcCallbacks.empty()) {
+        state.thisObject()->getPrivateObject()->finalizerData = self;
+    }
+
     se::Value _property;
     bool      _found = false;
     _found           = thisObject->getProperty("_ctor", &_property);
@@ -564,7 +654,7 @@ bool class_<T>::install() {
     _ctx->kls = se::Class::create(_ctx->className, _ctx->nsObject, _ctx->parentProto, fn, _ctx);
 
     for (auto &cb : _delayBlocks) {
-        cb(_ctx->kls);
+        (*cb)(_ctx->kls);
     }
 
     auto *getter = &genericAccessorGet<InstanceAttributeBase>;
@@ -602,4 +692,33 @@ bool class_<T>::install() {
     return true;
 }
 
+namespace internal {
+template <typename T>
+struct remove_class;
+template <typename C, typename R, typename... ARGS>
+struct remove_class<R (C::*)(ARGS...)> {
+    using type = R(ARGS...);
+};
+template <typename C, typename R, typename... ARGS>
+struct remove_class<R (C::*)(ARGS...) const> {
+    using type = R(ARGS...);
+};
+template <typename C, typename R, typename... ARGS>
+struct remove_class<R (C::*)(ARGS...) volatile> {
+    using type = R(ARGS...);
+};
+template <typename C, typename R, typename... ARGS>
+struct remove_class<R (C::*)(ARGS...) const volatile> {
+    using type = R(ARGS...);
+};
+
+template <typename Lambda>
+using LambdaSignature = typename remove_class<decltype(&Lambda::operator())>::type;
+
+} // namespace internal
+
+template <typename Lambda>
+typename internal::LambdaSignature<Lambda> *optional_lambda(const Lambda &f) {
+    return f;
+}
 } // namespace setpl
