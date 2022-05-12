@@ -224,11 +224,11 @@ struct InstanceMethod<R (*)(T *, ARGS...)> : InstanceMethodBase {
 };
 
 struct InstanceMethodOverloaded : InstanceMethodBase {
-    std::vector<InstanceMethodBase *> methods;
+    std::vector<InstanceMethodBase *> functions;
     bool                              invoke(se::State &state) const override {
         bool ret      = false;
         auto argCount = state.args().size();
-        for (auto *m : methods) {
+        for (auto *m : functions) {
             if (m->arg_count == argCount) {
                 ret = m->invoke(state);
                 if (ret) return true;
@@ -345,11 +345,13 @@ struct InstanceAttribute<AttributeAccessor<T, Getter, Setter>> : InstanceAttribu
     constexpr static bool has_getter = !std::is_same_v<std::nullptr_t, getter_type>;
     constexpr static bool has_setter = !std::is_same_v<std::nullptr_t, setter_type>;
 
-    static_assert(!has_getter || std::is_member_function_pointer<Getter>::value);
-    static_assert(!has_setter || std::is_member_function_pointer<Setter>::value);
-    static_assert(!has_getter || std::is_same<T, getter_class_type>::value);
-    static_assert(!has_setter || std::is_same<T, setter_class_type>::value);
-    static_assert(has_getter || has_setter);
+    constexpr static bool validate() {
+        static_assert(!has_getter || std::is_member_function_pointer<Getter>::value);
+        static_assert(!has_setter || std::is_member_function_pointer<Setter>::value);
+        static_assert(!has_getter || std::is_same<T, getter_class_type>::value);
+        static_assert(!has_setter || std::is_same<T, setter_class_type>::value);
+        static_assert(has_getter || has_setter);
+    }
 
     setter_type setterPtr;
     getter_type getterPtr;
@@ -377,20 +379,151 @@ struct InstanceAttribute<AttributeAccessor<T, Getter, Setter>> : InstanceAttribu
     }
 };
 
+struct StaticMethodBase {
+    std::string  class_name;
+    std::string  method_name;
+    std::string  signature;
+    size_t       arg_count;
+    virtual bool invoke(se::State &) const = 0;
+};
+template <typename T>
+struct StaticMethod;
+
 template <typename R, typename... ARGS>
-struct StaticMethod {
-    using type                          = R(ARGS...);
+struct StaticMethod<R (*)(ARGS...)> : StaticMethodBase {
+    using type                          = R (*)(ARGS...);
     using return_type                   = R;
-    constexpr static size_t arg_count   = sizeof...(ARGS);
+    constexpr static size_t argN        = sizeof...(ARGS);
     constexpr static bool   return_void = std::is_same<void, R>::value;
+
+    type fnPtr = nullptr;
+
+    template <typename... ARGS_HT, size_t... indexes>
+    R callWithTuple(std::tuple<ARGS_HT...> &args, std::index_sequence<indexes...>) const {
+        return (*fnPtr)(std::get<indexes>(args).value()...);
+    }
+
+    bool invoke(se::State &state) const override {
+        constexpr auto indexes{std::make_index_sequence<sizeof...(ARGS)>()};
+        const auto &   jsArgs = state.args();
+        if (argN != jsArgs.size()) {
+            SE_LOGE("incorret argument size %d, expect %d\n", jsArgs.size(), argN);
+            return false;
+        }
+        std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
+        convert_js_args_to_tuple(jsArgs, args, nullptr, indexes);
+        if constexpr (return_void) {
+            callWithTuple(args, indexes);
+        } else {
+            nativevalue_to_se(callWithTuple(args, indexes), state.rval(), thisObject);
+        }
+        return true;
+    }
 };
 
-template <typename A>
-struct StaticAttribute {
-    using type        = A;
-    using return_type = A;
-    using getter_type = A (*)();
-    using setter_type = void (*)(A);
+struct StaticMethodOverloaded : StaticMethodBase {
+    std::vector<StaticMethodBase *> functions;
+    bool                            invoke(se::State &state) const override {
+        bool ret      = false;
+        auto argCount = state.args().size();
+        for (auto *m : functions) {
+            if (m->arg_count == argCount) {
+                ret = m->invoke(state);
+                if (ret) return true;
+            }
+        }
+        return false;
+    }
+};
+
+struct StaticAttributeBase {
+    std::string  class_name;
+    std::string  attr_name;
+    std::string  signature;
+    std::string  name() { return class_name + "::" + attr_name; }
+    virtual bool get(se::State &) const = 0;
+    virtual bool set(se::State &) const = 0;
+};
+
+template <typename T>
+struct StaticAttribute;
+
+template <typename T, typename G, typename S>
+struct SAttributeAccessor;
+
+template <typename T>
+struct SAccessorGet {
+    using type        = void;
+    using return_type = void;
+};
+
+template <typename T>
+struct SAccessorSet {
+    using type       = void;
+    using value_type = void;
+};
+
+template <>
+struct SAccessorGet<std::nullptr_t> {
+    using type        = std::nullptr_t;
+    using return_type = std::nullptr_t;
+};
+
+template <>
+struct SAccessorSet<std::nullptr_t> {
+    using type       = std::nullptr_t;
+    using value_type = std::nullptr_t;
+};
+
+template <typename R>
+struct SAccessorGet<R(*)> {
+    using type        = R(*);
+    using return_type = R;
+    static_assert(!std::is_void_v<R>);
+};
+
+template <typename _R, typename F>
+struct SAccessorSet<_R (*)(F)> {
+    using type                = _R (*)(F);
+    using value_type          = F;
+    using ignored_return_type = _R;
+};
+
+template <typename T, typename Getter, typename Setter>
+struct StaticAttribute<SAttributeAccessor<T, Getter, Setter>> : StaticAttributeBase {
+    using type           = T;
+    using get_accessor   = SAccessorGet<Getter>;
+    using set_accessor   = SAccessorSet<Setter>;
+    using getter_type    = typename get_accessor::type;
+    using setter_type    = typename set_accessor::type;
+    using set_value_type = std::remove_reference_t<std::remove_cv_t<typename set_accessor::value_type>>;
+    using get_value_type = std::remove_reference_t<std::remove_cv_t<typename get_accessor::return_type>>;
+
+    constexpr static bool has_getter = !std::is_same_v<std::nullptr_t, getter_type>;
+    constexpr static bool has_setter = !std::is_same_v<std::nullptr_t, setter_type>;
+
+    static_assert(has_getter || has_setter);
+
+    setter_type setterPtr;
+    getter_type getterPtr;
+
+    bool get(se::State &state) const override {
+        if constexpr (has_getter) {
+            return nativevalue_to_se((*getterPtr)(), state.rval(), nullptr);
+        }
+        return false;
+    }
+
+    bool set(se::State &state) const override {
+        if constexpr (has_setter) {
+            auto &                                                          args = state.args();
+            HolderType<set_value_type, std::is_reference_v<set_value_type>> temp;
+            sevalue_to_native(args[0], &(temp.data), nullptr);
+            (*setterPtr)(temp.value());
+            return true;
+        }
+        return false;
+    }
 };
 
 using SeCallbackType = bool(se::State &);
@@ -398,11 +531,11 @@ using SeCallbackType = bool(se::State &);
 class context_db_ {
 public:
     struct context_ {
-        std::vector<std::tuple<std::string, InstanceAttributeBase *>> attributes;
+        std::vector<std::tuple<std::string, InstanceAttributeBase *>> properties;
         std::vector<std::tuple<std::string, InstanceFieldBase *>>     fields;
-        std::vector<std::tuple<std::string, InstanceMethodBase *>>    methods;
-        std::vector<std::tuple<std::string, InstanceMethodBase *>>    _staticMethods;
-        std::vector<std::tuple<std::string, InstanceMethodBase *>>    _staticAttributes;
+        std::vector<std::tuple<std::string, InstanceMethodBase *>>    functions;
+        std::vector<std::tuple<std::string, StaticMethodBase *>>      staticFunctions;
+        std::vector<std::tuple<std::string, StaticAttributeBase *>>   staticProperties;
         std::vector<ConstructorBase *>                                constructors;
         std::vector<GcCallbackBase *>                                 gcCallbacks;
         std::string                                                   className;
@@ -451,7 +584,7 @@ public:
 
     template <typename F>
     class_ &ctor(F);
-    
+
     template <typename F>
     class_ &gcCallback(F);
 
@@ -464,11 +597,11 @@ public:
     template <size_t N, typename Getter, typename Setter>
     class_ &property(const char (&name)[N], Getter getter, Setter setter);
 
-    template <size_t N, typename R, typename... ARGS>
-    class_ &static_method(const char (&name)[N], typename StaticMethod<R, ARGS...>::type method);
+    template <size_t N, typename Method>
+    class_ &staticFunction(const char (&name)[N], Method method);
 
-    template <size_t N, typename A>
-    class_ &static_attribute(const char (&name)[N], typename StaticAttribute<A>::getter_type getter, typename StaticAttribute<A>::setter_type setter);
+    template <size_t N, typename Getter, typename Setter>
+    class_ &staticProperty(const char (&name)[N], Getter getter, Setter setter);
 
     se::Object *prototype() {
         return _ctx->kls->getProto();
@@ -548,7 +681,7 @@ class_<T> &class_<T>::function(const char (&name)[N], Method method) {
     methodp->method_name = name;
     methodp->class_name  = _ctx->className;
     methodp->arg_count   = MTYPE::argN;
-    _ctx->methods.emplace_back(name, methodp);
+    _ctx->functions.emplace_back(name, methodp);
     return *this;
 }
 
@@ -575,9 +708,36 @@ class_<T> &class_<T>::property(const char (&name)[N], Getter getter, Setter sett
     attrp->setterPtr  = ATYPE::has_setter ? setter : nullptr;
     attrp->class_name = _ctx->className;
     attrp->attr_name  = name;
-    _ctx->attributes.emplace_back(name, attrp);
+    _ctx->properties.emplace_back(name, attrp);
     return *this;
 }
+
+template <typename T>
+template <size_t N, typename Method>
+class_<T> &class_<T>::staticFunction(const char (&name)[N], Method method) {
+    using MTYPE          = StaticMethod<Method>;
+    auto *methodp        = new MTYPE();
+    methodp->fnPtr       = method;
+    methodp->method_name = name;
+    methodp->class_name  = _ctx->className;
+    methodp->arg_count   = MTYPE::argN;
+    _ctx->staticFunctions.emplace_back(name, methodp);
+    return *this;
+}
+
+template <typename T>
+template <size_t N, typename Getter, typename Setter>
+class_<T> &class_<T>::staticProperty(const char (&name)[N], Getter getter, Setter setter) {
+    using ATYPE       = StaticAttribute<SAttributeAccessor<T, Getter, Setter>>;
+    auto *attrp       = new ATYPE();
+    attrp->getterPtr  = ATYPE::has_getter ? getter : nullptr;
+    attrp->setterPtr  = ATYPE::has_setter ? setter : nullptr;
+    attrp->class_name = _ctx->className;
+    attrp->attr_name  = name;
+    _ctx->staticProperties.emplace_back(name, attrp);
+    return *this;
+}
+
 template <typename T>
 void genericGcCallback(se::PrivateObjectBase *privateObject) {
     using context_type = typename class_<T>::context_;
@@ -679,10 +839,9 @@ bool class_<T>::install() {
 
     if (_ctx->constructors.empty()) {
         if constexpr (std::is_default_constructible<T>::value) {
-            ctor();
+            ctor(); // add default constructor
         }
     }
-
     _ctx->kls = se::Class::create(_ctx->className, _ctx->nsObject, _ctx->parentProto, fn, _ctx);
 
     for (auto &cb : _delayBlocks) {
@@ -691,7 +850,7 @@ bool class_<T>::install() {
 
     auto *getter = &genericAccessorGet<InstanceAttributeBase>;
     auto *setter = &genericAccessorSet<InstanceAttributeBase>;
-    for (auto &attr : _ctx->attributes) {
+    for (auto &attr : _ctx->properties) {
         _ctx->kls->defineProperty(std::get<0>(attr).c_str(), getter, setter, std::get<1>(attr));
     }
     auto *field_getter = &genericAccessorGet<InstanceFieldBase>;
@@ -699,10 +858,11 @@ bool class_<T>::install() {
     for (auto &field : _ctx->fields) {
         _ctx->kls->defineProperty(std::get<0>(field).c_str(), field_getter, field_setter, std::get<1>(field));
     }
+    // defineFunctions
     {
         std::vector<InstanceMethodBase *>                        uniqueMethods;
         std::map<std::string, std::vector<InstanceMethodBase *>> multimap;
-        for (auto &m : _ctx->methods) {
+        for (auto &m : _ctx->functions) {
             multimap[std::get<0>(m)].emplace_back(std::get<1>(m));
         }
         for (auto &m : multimap) {
@@ -711,7 +871,7 @@ bool class_<T>::install() {
                 overloaded->class_name  = _ctx->className;
                 overloaded->method_name = m.first;
                 for (auto *i : m.second) {
-                    overloaded->methods.push_back(i);
+                    overloaded->functions.push_back(i);
                 }
                 _ctx->kls->defineFunction(m.first.c_str(), &genericFunction, overloaded);
             } else {
@@ -719,7 +879,30 @@ bool class_<T>::install() {
             }
         }
     }
-
+    // define static functions
+    {
+        std::vector<StaticMethodBase *>                        uniqueMethods;
+        std::map<std::string, std::vector<StaticMethodBase *>> multimap;
+        for (auto &m : _ctx->staticFunctions) {
+            multimap[std::get<0>(m)].emplace_back(std::get<1>(m));
+        }
+        for (auto &m : multimap) {
+            if (m.second.size() > 1) {
+                auto *overloaded        = new StaticMethodOverloaded;
+                overloaded->class_name  = _ctx->className;
+                overloaded->method_name = m.first;
+                for (auto *i : m.second) {
+                    overloaded->functions.push_back(i);
+                }
+                _ctx->kls->defineStaticFunction(m.first.c_str(), &genericFunction, overloaded);
+            } else {
+                _ctx->kls->defineStaticFunction(m.first.c_str(), &genericFunction, m.second[0]);
+            }
+        }
+    }
+    for (auto &prop : _ctx->staticProperties) {
+        _ctx->kls->defineStaticProperty(std::get<0>(prop).c_str(), field_getter, field_setter, std::get<1>(prop));
+    }
     _ctx->kls->install();
     return true;
 }

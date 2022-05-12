@@ -213,21 +213,21 @@ bool Class::defineProperty(const std::initializer_list<const char *> &names, v8:
     return ret;
 }
 
-bool Class::defineStaticFunction(const char *name, v8::FunctionCallback func) {
+bool Class::defineStaticFunction(const char *name, v8::FunctionCallback func, void *data) {
     v8::MaybeLocal<v8::String> jsName = v8::String::NewFromUtf8(__isolate, name, v8::NewStringType::kNormal);
     if (jsName.IsEmpty()) {
         return false;
     }
-    _ctorTemplate.Get(__isolate)->Set(jsName.ToLocalChecked(), v8::FunctionTemplate::New(__isolate, func));
+    _ctorTemplate.Get(__isolate)->Set(jsName.ToLocalChecked(), v8::FunctionTemplate::New(__isolate, func, v8::External::New(__isolate, data)));
     return true;
 }
 
-bool Class::defineStaticProperty(const char *name, v8::AccessorNameGetterCallback getter, v8::AccessorNameSetterCallback setter) {
+bool Class::defineStaticProperty(const char *name, v8::AccessorNameGetterCallback getter, v8::AccessorNameSetterCallback setter, void *data) {
     v8::MaybeLocal<v8::String> jsName = v8::String::NewFromUtf8(__isolate, name, v8::NewStringType::kNormal);
     if (jsName.IsEmpty()) {
         return false;
     }
-    _ctorTemplate.Get(__isolate)->SetNativeDataProperty(jsName.ToLocalChecked(), getter, setter);
+    _ctorTemplate.Get(__isolate)->SetNativeDataProperty(jsName.ToLocalChecked(), getter, setter, v8::External::New(__isolate, data));
     return true;
 }
 

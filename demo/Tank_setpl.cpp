@@ -24,6 +24,21 @@ war::Tank *construct_tank(int id, std::string name) {
     return new war::Tank(id * 10000, name + " ants");
 }
 
+void Tank_Sleep() {
+    std::cout << "All tank is sleeping ... " << std::endl;
+}
+void Tank_Sleep2(int n) {
+    std::cout << "All tank is sleeping ... " << n << std::endl;
+}
+
+int Tank_random() {
+    return rand();
+}
+
+void Tank_seed(int seed) {
+    srand(seed);
+}
+
 bool js_register_war_Tank(se::Object *obj) {
     setpl::class_<war::Weapon> weapon("Weapon");
 
@@ -63,6 +78,9 @@ bool js_register_war_Tank(se::Object *obj) {
         .gcCallback([](auto *w) {
             std::cout << "TankNever Stop!!! " << w->getName() << std::endl;
         })
+        .staticFunction("sleep", &Tank_Sleep)
+        .staticFunction("sleep", &Tank_Sleep2)
+        .staticProperty("rand", &Tank_random, &Tank_seed)
         .install();
 
     return true;

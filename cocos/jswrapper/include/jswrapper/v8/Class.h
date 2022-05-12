@@ -80,7 +80,7 @@ public:
          *  @param[in] func A callback to invoke when the constructor's property is called as a function.
          *  @return true if succeed, otherwise false.
          */
-    bool defineStaticFunction(const char *name, v8::FunctionCallback func);
+    bool defineStaticFunction(const char *name, v8::FunctionCallback func, void *data = nullptr);
 
     /**
          *  @brief Defines a static property with accessor callbacks. Only JavaScript constructor object will have this property.
@@ -89,7 +89,7 @@ public:
          *  @param[in] setter A callback to invoke when the constructor's property is set.
          *  @return true if succeed, otherwise false.
          */
-    bool defineStaticProperty(const char *name, v8::AccessorNameGetterCallback getter, v8::AccessorNameSetterCallback setter);
+    bool defineStaticProperty(const char *name, v8::AccessorNameGetterCallback getter, v8::AccessorNameSetterCallback setter, void *data = nullptr);
 
     /**
          *  @brief Defines the finalize function with a callback.

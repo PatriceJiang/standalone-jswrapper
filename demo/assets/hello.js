@@ -32,7 +32,15 @@ tank3.fire("England");
 
 tank.load(w);
 
+Tank2.sleep(123456);
 
+
+Tank2.rand = 33;
+for(let i = 0;  i < 10 ;i ++) {
+    console.log(` ${i} random value ${Tank2.rand}`);
+}
 
 
 console.log(`run script end!!`);
+
+
