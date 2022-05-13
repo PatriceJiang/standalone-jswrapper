@@ -41,6 +41,11 @@
 /////////////////sevalue to native/////////////////////////////
 ////////////////////////////////////////////////////////////////////////////
 
+inline bool sevalue_to_native(const se::Value& from, se::Object** to, se::Object *ctx) {
+    *to = from.toObject();
+    return true;
+}
+
 inline bool sevalue_to_native(const se::Value &from, std::string *to, se::Object * /*ctx*/) { // NOLINT(readability-identifier-naming)
     if (!from.isNullOrUndefined()) {
         *to = from.toString();
