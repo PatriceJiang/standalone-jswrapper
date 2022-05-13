@@ -330,6 +330,21 @@ struct AccessorSet<_R (T::*)(F)> {
     using ignored_return_type = _R;
 };
 
+template <typename T, typename _R, typename F>
+struct AccessorSet<_R (*)(T *, F)> {
+    using class_type          = T;
+    using type                = _R (*)(T *, F);
+    using value_type          = F;
+    using ignored_return_type = _R;
+};
+template <typename T, typename R>
+struct AccessorGet<R (*)(T *)> {
+    using class_type  = T;
+    using type        = R (*)(T *);
+    using return_type = R;
+    static_assert(!std::is_void_v<R>);
+};
+
 template <typename T, typename Getter, typename Setter>
 struct InstanceAttribute<AttributeAccessor<T, Getter, Setter>> : InstanceAttributeBase {
     using type              = T;
@@ -342,16 +357,16 @@ struct InstanceAttribute<AttributeAccessor<T, Getter, Setter>> : InstanceAttribu
     using getter_class_type = typename get_accessor::class_type;
     using setter_class_type = typename set_accessor::class_type;
 
-    constexpr static bool has_getter = !std::is_same_v<std::nullptr_t, getter_type>;
-    constexpr static bool has_setter = !std::is_same_v<std::nullptr_t, setter_type>;
+    constexpr static bool has_getter            = !std::is_same_v<std::nullptr_t, getter_type>;
+    constexpr static bool has_setter            = !std::is_same_v<std::nullptr_t, setter_type>;
+    constexpr static bool has_getter_and_setter = has_setter && has_getter;
+    constexpr static bool getter_is_member_fn   = has_getter && std::is_member_function_pointer<Getter>::value;
+    constexpr static bool setter_is_member_fn   = has_setter && std::is_member_function_pointer<Setter>::value;
+    constexpr static bool both_member_fn        = getter_is_member_fn && setter_is_member_fn;
 
-    constexpr static bool validate() {
-        static_assert(!has_getter || std::is_member_function_pointer<Getter>::value);
-        static_assert(!has_setter || std::is_member_function_pointer<Setter>::value);
-        static_assert(!has_getter || std::is_same<T, getter_class_type>::value);
-        static_assert(!has_setter || std::is_same<T, setter_class_type>::value);
-        static_assert(has_getter || has_setter);
-    }
+    static_assert(!has_getter || std::is_same<T, getter_class_type>::value);
+    static_assert(!has_setter || std::is_same<T, setter_class_type>::value);
+    static_assert(!has_getter_and_setter || !both_member_fn || std::is_same_v<getter_class_type, setter_class_type>);
 
     setter_type setterPtr;
     getter_type getterPtr;
@@ -360,7 +375,11 @@ struct InstanceAttribute<AttributeAccessor<T, Getter, Setter>> : InstanceAttribu
         if constexpr (has_getter) {
             T *         self       = reinterpret_cast<T *>(state.nativeThisObject());
             se::Object *thisObject = state.thisObject();
-            return nativevalue_to_se((self->*getterPtr)(), state.rval(), thisObject);
+            if constexpr (getter_is_member_fn) {
+                return nativevalue_to_se((self->*getterPtr)(), state.rval(), thisObject);
+            } else {
+                return nativevalue_to_se((*getterPtr)(self), state.rval(), thisObject);
+            }
         }
         return false;
     }
@@ -372,7 +391,11 @@ struct InstanceAttribute<AttributeAccessor<T, Getter, Setter>> : InstanceAttribu
             auto &                                                          args       = state.args();
             HolderType<set_value_type, std::is_reference_v<set_value_type>> temp;
             sevalue_to_native(args[0], &(temp.data), thisObject);
-            (self->*setterPtr)(temp.value());
+            if constexpr (setter_is_member_fn) {
+                (self->*setterPtr)(temp.value());
+            } else {
+                (*setterPtr)(self, temp.value());
+            }
             return true;
         }
         return false;
@@ -539,9 +562,9 @@ public:
         std::vector<ConstructorBase *>                                constructors;
         std::vector<GcCallbackBase *>                                 gcCallbacks;
         std::string                                                   className;
-        se::Class *                                                   kls         = nullptr;
-        se::Object *                                                  nsObject    = nullptr;
-        se::Object *                                                  parentProto = nullptr;
+        se::Class *                                                   kls = nullptr;
+        //se::Object *                                                  nsObject    = nullptr;
+        se::Object *parentProto = nullptr;
     };
     inline context_ *operator[](const std::string &key) {
         return this->operator[](key.c_str());
@@ -572,12 +595,16 @@ public:
     class_(context_ *ctx) : _ctx(ctx) {}
     class_(const std::string &name);
 
+    ~class_() {
+        assert(_installed); // procedure `class_::install` has not been invoked?
+    }
+
     class_ &inherits(se::Object *parentProto);
 
-    // set namespace object, parent
-    class_ &namespaceObject(se::Object *nsObj);
+    bool install(se::Object *nsObject);
 
-    bool install();
+    // set namespace object, parent
+    //class_ &namespaceObject(se::Object *nsObj);
 
     template <typename... ARGS>
     class_ &ctor();
@@ -613,6 +640,7 @@ public:
     }
 
 private:
+    bool                               _installed{false};
     context_ *                         _ctx{nullptr};
     std::vector<void (*)(se::Class *)> _delayBlocks;
     template <typename R>
@@ -627,21 +655,22 @@ class_<T>::class_(const std::string &name) {
 
 template <typename T>
 class_<T> &class_<T>::inherits(se::Object *obj) {
+    assert(!_ctx->parentProto); // already set
     _ctx->parentProto = obj;
     return *this;
 }
 
-template <typename T>
-class_<T> &class_<T>::namespaceObject(se::Object *nsobj) {
-    _ctx->nsObject = nsobj;
-    return *this;
-}
+//template <typename T>
+//class_<T> &class_<T>::namespaceObject(se::Object *nsobj) {
+//    _ctx->nsObject = nsobj;
+//    return *this;
+//}
 
 template <typename T>
 template <typename... ARGS>
 class_<T> &class_<T>::ctor() {
     using CTYPE = Constructor<TypeList<T, ARGS...>>;
-    //static_assert(!std::is_same_v<void, InstanceMethod<Method>::return_type>);
+    // static_assert(!std::is_same_v<void, InstanceMethod<Method>::return_type>);
     auto *constructp      = new CTYPE();
     constructp->arg_count = sizeof...(ARGS);
     _ctx->constructors.emplace_back(constructp);
@@ -673,9 +702,9 @@ template <typename T>
 template <size_t N, typename Method>
 class_<T> &class_<T>::function(const char (&name)[N], Method method) {
     using MTYPE = InstanceMethod<Method>;
-    //static_assert(!std::is_same_v<void, InstanceMethod<Method>::return_type>);
+    // static_assert(!std::is_same_v<void, InstanceMethod<Method>::return_type>);
     static_assert(std::is_same<typename MTYPE::class_type, T>::value);
-    //static_assert(std::is_member_function_pointer_v<Method>);
+    // static_assert(std::is_member_function_pointer_v<Method>);
     auto *methodp        = new MTYPE();
     methodp->fnPtr       = method;
     methodp->method_name = name;
@@ -833,16 +862,17 @@ void genericAccessorGet(v8::Local<v8::Name>                        property,
 void genericFunction(const v8::FunctionCallbackInfo<v8::Value> &_v8args);
 
 template <typename T>
-bool class_<T>::install() {
+bool class_<T>::install(se::Object *nsObject) {
     constexpr auto *fn = &genericConstructor<T>;
-    assert(_ctx->nsObject);
+    assert(nsObject);
+    _installed = true;
 
     if (_ctx->constructors.empty()) {
         if constexpr (std::is_default_constructible<T>::value) {
             ctor(); // add default constructor
         }
     }
-    _ctx->kls = se::Class::create(_ctx->className, _ctx->nsObject, _ctx->parentProto, fn, _ctx);
+    _ctx->kls = se::Class::create(_ctx->className, nsObject, _ctx->parentProto, fn, _ctx);
 
     for (auto &cb : _delayBlocks) {
         (*cb)(_ctx->kls);

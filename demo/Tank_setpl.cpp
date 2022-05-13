@@ -39,11 +39,17 @@ void Tank_seed(int seed) {
     srand(seed);
 }
 
+std::string Tank_nick(war::Tank *n) {
+    static int        id = 333;
+    std::stringstream ss;
+    ss << "Tank Nickname " << (++id) << "//done";
+    return ss.str();
+}
+
 bool js_register_war_Tank(se::Object *obj) {
     setpl::class_<war::Weapon> weapon("Weapon");
 
-    weapon.namespaceObject(obj)
-        .ctor(+[](float r) { return new war::Weapon(); })
+    weapon.ctor(+[](float r) { return new war::Weapon(); })
         .ctor<int>()
         .function("fire2", &war::Weapon::fire2)
         .function("power", &weapon_power)
@@ -56,16 +62,16 @@ bool js_register_war_Tank(se::Object *obj) {
         .gcCallback(setpl::optional_lambda([](war::Weapon *w) {
             std::cout << "What the fuck2 ... trying to gc me ?? " << w->__id << std::endl;
         }))
-        .install();
+        .install(obj);
 
     setpl::class_<war::Tank> tank("Tank2");
-    tank.namespaceObject(obj)
-        .ctor(&construct_tank)
-        .inherits(weapon.prototype())
+    tank.ctor(&construct_tank)
         .ctor<std::string>()
         //.ctor<int, std::string>()
+        .inherits(weapon.prototype())
         .field("id", &war::Tank::id)
         .property("name", &war::Tank::getName, &war::Tank::setName)
+        .property("nick", &Tank_nick, &war::Tank::setName)
         .property("badId", &war::Tank::badID, &war::Tank::updateBadId)
         .property("readOnlyId", &war::Tank::badID, nullptr)
         //.property("readOnlyId2", nullptr, nullptr)
@@ -81,7 +87,7 @@ bool js_register_war_Tank(se::Object *obj) {
         .staticFunction("sleep", &Tank_Sleep)
         .staticFunction("sleep", &Tank_Sleep2)
         .staticProperty("rand", &Tank_random, &Tank_seed)
-        .install();
+        .install(obj);
 
     return true;
 }

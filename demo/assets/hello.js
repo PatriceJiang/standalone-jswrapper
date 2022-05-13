@@ -37,7 +37,8 @@ Tank2.sleep(123456);
 
 Tank2.rand = 33;
 for(let i = 0;  i < 10 ;i ++) {
-    console.log(` ${i} random value ${Tank2.rand}`);
+    tank3.nick = ""+i;
+    console.log(` ${i} random value ${Tank2.rand} ${tank3.nick}`);
 }
 
 
