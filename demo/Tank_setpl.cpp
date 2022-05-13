@@ -56,6 +56,7 @@ bool js_register_war_Tank(se::Object *obj) {
     weapon.ctor(+[](float r) { return new war::Weapon(); })
         .ctor<int>()
         .function("fire2", &war::Weapon::fire2)
+        .function("numbers", &war::Weapon::numbers)
         .function("power", &weapon_power)
         .function("addid", &weapon_add_id)
         .function("toString", &weapon_toString)
@@ -71,6 +72,8 @@ bool js_register_war_Tank(se::Object *obj) {
     sebind::class_<war::Tank> tank("Tank2");
     tank.ctor(&construct_tank)
         .ctor<std::string>()
+        //.ctor<se::Object*>
+        //.ctor<sebind::ThisObject>()
         .ctor<int, std::string>()
         .inherits(weapon.prototype())
         .field("id", &war::Tank::seqId)

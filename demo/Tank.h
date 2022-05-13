@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iostream>
-
+#include <vector>
 #include <string>
 namespace war {
 
@@ -15,6 +15,10 @@ public:
     }
     virtual void fire2(std::string s) {
         std::cout << "Weapon::["<< seqId <<"] fire with weapon!!! @" << s << std::endl;
+    }
+
+    std::vector<int> numbers() {
+        return {1, 2, 3, 4};
     }
 
     int getSeqId() { return seqId; }

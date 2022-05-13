@@ -10,6 +10,7 @@ console.log(`run script hello.js`);
  tank.readOnlyId = 909099090;
  console.log(`readonlyId after update, tank id ${tank.readOnlyId}`);
  tank.fire("U country");
+ console.log(tank.numbers());
  
  if(tank.fire2) {
      console.log("Tank2 inherits Weapon");
