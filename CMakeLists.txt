@@ -27,7 +27,7 @@ add_executable(demo
 
 target_link_libraries(demo 
    ccbindings
-   setpl
+   sebind
 )
 
 set(target_name demo)

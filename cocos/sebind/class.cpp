@@ -1,6 +1,6 @@
 #include "class.h"
 
-namespace setpl {
+namespace sebind {
 
 context_db_::context_ *context_db_::operator[](const char *key) {
     auto it = _contexts.find(key);
@@ -47,4 +47,4 @@ void genericFunction(const v8::FunctionCallbackInfo<v8::Value> &_v8args) {
 }
 
 
-} // namespace setpl
+} // namespace sebind

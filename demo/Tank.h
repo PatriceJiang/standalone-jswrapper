@@ -8,16 +8,19 @@ namespace war {
 class Weapon {
 public:
     Weapon() = default;
-    Weapon(int id) : __id(id) {}
+    Weapon(int id) : seqId(id) {}
     
     virtual ~Weapon() {
-        std::cout << "finalize Weapon  __id " << __id << std::endl;
+        std::cout << "finalize Weapon  seqId " << seqId << std::endl;
     }
     virtual void fire2(std::string s) {
-        std::cout << "fire with weapon!!! @" << s << std::endl;
+        std::cout << "Weapon::["<< seqId <<"] fire with weapon!!! @" << s << std::endl;
     }
 
-    int __id;
+    int getSeqId() { return seqId; }
+    void setSeqId(int r) { seqId = r; }
+
+    int seqId;
 };
 
 class Tank : public Weapon {
@@ -26,7 +29,7 @@ public:
     Tank(int i, const std::string &name);
 
     virtual ~Tank() {
-        std::cout << "finalize tank " << name << ", id " << id << std::endl;
+        std::cout << "finalize tank " << name << ", id " << seqId << std::endl;
     }
     void fire(float x, float y, float z);
     void fire(std::string);
@@ -37,15 +40,13 @@ public:
     }
 
     void load(Weapon *w) {
-        std::cout << "load weapon id __ " << w->__id << std::endl;
+        std::cout << "load weapon seqId " << w->seqId << std::endl;
     }
 
     void tick() {}
     void tick2(int) {}
 
-    int id{-1};
-
-    size_t badID() { return id; }
+    size_t badID() { return seqId; }
     bool   updateBadId(int ) {
   /*      id = nid;
         c*/

@@ -2,33 +2,30 @@
 console.log(`run script hello.js`);
 
 
-//let tank = new jswar.Tank("Tiger");
-//tank.fire(9, 1, 1);
-//
 
  let tank = new Tank2("Tiger");
  tank.fire(9, 1, 1);
  tank.id = 3333333;
- console.log(`tank id ${tank.id}`);
+ console.log(`set tank.id to 3333333, tank id ${tank.id}`);
  tank.readOnlyId = 909099090;
- console.log(`tank id ${tank.readOnlyId}`);
- tank.fire("USA");
+ console.log(`readonlyId after update, tank id ${tank.readOnlyId}`);
+ tank.fire("U country");
  
  if(tank.fire2) {
-     console.log("Tane2 inherits Weapon");
-     tank.fire2("Japaness");
+     console.log("Tank2 inherits Weapon");
+     tank.fire2("J country");
  }else{
-     console.log("Tank2 no inherits Weapon");
+     console.error("!!! Tank2 no inherits Weapon");
  }
 
 // let w = new Weapon(333,"Sdfs");
 let w = new Weapon(333);
-w.fire2(`sdfsfd power ${w.power()}`);
-w.fire2(`sdfsfd power ${w.addid(10000000)}`);
+w.fire2(`fire2 power ${w.power()}`);
+w.fire2(`fire2 power ${w.addid(10000000)}`);
 
 
 let tank3 = new Tank2(8890, "Lion");
-tank3.fire("England");
+tank3.fire("E country");
 
 tank.load(w);
 

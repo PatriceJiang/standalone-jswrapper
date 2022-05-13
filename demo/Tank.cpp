@@ -8,16 +8,16 @@ Tank::Tank(const std::string &name) : Weapon(0) {
 }
 
 Tank::Tank(int i, const std::string &name) : Weapon(0) {
-    id         = i;
+    seqId         = i;
     this->name = name;
 }
 
 void Tank::fire(float x, float y, float z) {
-    std::cout << "Tank[" << name << "] aim (" << x << "," << y << "," << z << ") and fire!" << std::endl;
+    std::cout << "Tank [" << name << "/"  << seqId  << "] aim (" << x << "," << y << "," << z << ") and fire!" << std::endl;
 }
 
 void Tank::fire(std::string targetName) {
-    std::cout << "Tank[" << name << "] fire at target " << targetName << std::endl;
+    std::cout << "Tank [" << name<< "/"  << seqId << "] fire at target " << targetName << std::endl;
 }
 
 } // namespace war

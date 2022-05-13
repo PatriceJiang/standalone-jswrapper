@@ -5,22 +5,25 @@
 #include "Tank.h"
 #include "class.h"
 
+
+// extension functions for 
+namespace {
 std::string weapon_power(const war::Weapon *w) {
-    return "godgodogd";
+    return "weapon_power";
 }
 
 auto *weapon_add_id(war::Weapon *w, int arg) {
-    w->__id += arg;
+    w->seqId += arg;
     return w;
 }
 
 std::string weapon_toString(war::Weapon *w) {
     std::stringstream ss;
-    ss << "Object[Weapon: id " << w->__id << "]" << std::endl;
+    ss << "Object[Weapon: id " << w->seqId << "]" << std::endl;
     return ss.str();
 }
 
-war::Tank *construct_tank(int id, std::string name) {
+war::Tank *construct_tank(int id, std::string name, int ) {
     return new war::Tank(id * 10000, name + " ants");
 }
 
@@ -38,16 +41,17 @@ int Tank_random() {
 void Tank_seed(int seed) {
     srand(seed);
 }
-
 std::string Tank_nick(war::Tank *n) {
     static int        id = 333;
     std::stringstream ss;
-    ss << "Tank Nickname " << (++id) << "//done";
+    ss << " nickname from " << __FUNCTION__ << " " << (++id);
     return ss.str();
 }
+} // namespace
+
 
 bool js_register_war_Tank(se::Object *obj) {
-    setpl::class_<war::Weapon> weapon("Weapon");
+    sebind::class_<war::Weapon> weapon("Weapon");
 
     weapon.ctor(+[](float r) { return new war::Weapon(); })
         .ctor<int>()
@@ -59,30 +63,32 @@ bool js_register_war_Tank(se::Object *obj) {
             // do something with se::Class* directly!
             std::cout << "class name ---> " << kls->getName() << std::endl;
         })
-        .gcCallback(setpl::optional_lambda([](war::Weapon *w) {
-            std::cout << "What the fuck2 ... trying to gc me ?? " << w->__id << std::endl;
+        .gcCallback(sebind::optional_lambda([](war::Weapon *w) {
+            std::cout << " dying ... " << w->seqId << std::endl;
         }))
         .install(obj);
 
-    setpl::class_<war::Tank> tank("Tank2");
+    sebind::class_<war::Tank> tank("Tank2");
     tank.ctor(&construct_tank)
         .ctor<std::string>()
-        //.ctor<int, std::string>()
+        .ctor<int, std::string>()
         .inherits(weapon.prototype())
-        .field("id", &war::Tank::id)
+        .field("id", &war::Tank::seqId)
         .property("name", &war::Tank::getName, &war::Tank::setName)
         .property("nick", &Tank_nick, &war::Tank::setName)
         .property("badId", &war::Tank::badID, &war::Tank::updateBadId)
         .property("readOnlyId", &war::Tank::badID, nullptr)
-        //.property("readOnlyId2", nullptr, nullptr)
+        //.property("readOnlyId2", nullptr, nullptr) // should failed
         .property("writeOnlyId", nullptr, &war::Tank::updateBadId)
         .function("fire", static_cast<void (war::Tank::*)(std::string)>(&war::Tank::fire))
         .function("fire", static_cast<void (war::Tank::*)(float, float, float)>(&war::Tank::fire))
+        .function("fire3", &war::Weapon::fire2)
+        .property("seqId", &war::Weapon::getSeqId, &war::Tank::updateBadId)
         .function("load", &war::Tank::load)
         .function("tick", &war::Tank::tick)
         .function("tick2", &war::Tank::tick2)
         .gcCallback([](auto *w) {
-            std::cout << "TankNever Stop!!! " << w->getName() << std::endl;
+            std::cout << " before gc tank " << w->getName() << std::endl;
         })
         .staticFunction("sleep", &Tank_Sleep)
         .staticFunction("sleep", &Tank_Sleep2)

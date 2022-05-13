@@ -12,7 +12,7 @@
 
 //#include "signature.h"
 
-namespace setpl {
+namespace sebind {
 
 namespace internal {
 template <typename T>
@@ -105,28 +105,6 @@ struct Constructor<T *(*)(ARGS...)> : ConstructorBase {
     template <typename... ARGS_HT, size_t... indexes>
     T *constructWithTuple(std::tuple<ARGS_HT...> &args, std::index_sequence<indexes...>) {
         return (*func)(std::get<indexes>(args).value()...);
-    }
-};
-
-template <typename T, typename... ARGS>
-struct Constructor<std::function<T *(ARGS...)>> : ConstructorBase {
-    using type = std::function<T *(ARGS...)>;
-    type func;
-    bool construct(se::State &state) {
-        if ((sizeof...(ARGS)) != state.args().size()) {
-            return false;
-        }
-        std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
-        auto &                                                     jsArgs = state.args();
-        convert_js_args_to_tuple(jsArgs, args, nullptr, std::make_index_sequence<sizeof...(ARGS)>());
-        auto *ptr = constructWithTuple(args, std::make_index_sequence<sizeof...(ARGS)>());
-        state.thisObject()->setPrivateData(ptr);
-        return true;
-    }
-
-    template <typename... ARGS_HT, size_t... indexes>
-    T *constructWithTuple(std::tuple<ARGS_HT...> &args, std::index_sequence<indexes...>) {
-        return func(std::get<indexes>(args).value()...);
     }
 };
 
@@ -359,14 +337,11 @@ struct InstanceAttribute<AttributeAccessor<T, Getter, Setter>> : InstanceAttribu
 
     constexpr static bool has_getter            = !std::is_same_v<std::nullptr_t, getter_type>;
     constexpr static bool has_setter            = !std::is_same_v<std::nullptr_t, setter_type>;
-    constexpr static bool has_getter_and_setter = has_setter && has_getter;
     constexpr static bool getter_is_member_fn   = has_getter && std::is_member_function_pointer<Getter>::value;
     constexpr static bool setter_is_member_fn   = has_setter && std::is_member_function_pointer<Setter>::value;
-    constexpr static bool both_member_fn        = getter_is_member_fn && setter_is_member_fn;
 
-    static_assert(!has_getter || std::is_same<T, getter_class_type>::value);
-    static_assert(!has_setter || std::is_same<T, setter_class_type>::value);
-    static_assert(!has_getter_and_setter || !both_member_fn || std::is_same_v<getter_class_type, setter_class_type>);
+    static_assert(!has_getter || std::is_base_of<getter_class_type, T>::value);
+    static_assert(!has_setter || std::is_base_of<setter_class_type, T>::value);
 
     setter_type setterPtr;
     getter_type getterPtr;
@@ -703,7 +678,7 @@ template <size_t N, typename Method>
 class_<T> &class_<T>::function(const char (&name)[N], Method method) {
     using MTYPE = InstanceMethod<Method>;
     // static_assert(!std::is_same_v<void, InstanceMethod<Method>::return_type>);
-    static_assert(std::is_same<typename MTYPE::class_type, T>::value);
+    static_assert(std::is_base_of<typename MTYPE::class_type, T>::value);
     // static_assert(std::is_member_function_pointer_v<Method>);
     auto *methodp        = new MTYPE();
     methodp->fnPtr       = method;
@@ -719,7 +694,7 @@ template <size_t N, typename Field>
 class_<T> &class_<T>::field(const char (&name)[N], Field field) {
     static_assert(std::is_member_pointer<Field>::value);
     using FTYPE = InstanceField<Field>;
-    static_assert(std::is_same<typename FTYPE::class_type, T>::value);
+    static_assert(std::is_base_of<typename FTYPE::class_type, T>::value);
     auto *fieldp       = new FTYPE();
     fieldp->fieldPtr   = field;
     fieldp->field_name = name;
@@ -937,4 +912,4 @@ bool class_<T>::install(se::Object *nsObject) {
     return true;
 }
 
-} // namespace setpl
+} // namespace sebind
