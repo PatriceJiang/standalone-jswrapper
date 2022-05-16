@@ -4,9 +4,6 @@
 #include <vector>
 #include <string>
 
-namespace se {
-class Object;
-}
 
 namespace war {
 
@@ -36,8 +33,9 @@ class Tank : public Weapon {
 public:
     Tank(const std::string &name);
     Tank(int i, const std::string &name);
-    Tank(se::Object *jsthis) {
-    }
+    // Tank(ThisObject jsthis) {
+    //     std::cout << "Tank js this object is "<< jsthis.self << std::endl;
+    // }
 
     virtual ~Tank() {
         std::cout << "finalize tank " << name << ", id " << seqId << std::endl;

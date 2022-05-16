@@ -2,6 +2,7 @@
 
 namespace sebind {
 
+namespace intl {
 context_db_::context_ *context_db_::operator[](const char *key) {
     auto it = _contexts.find(key);
     if (it == _contexts.end()) {
@@ -25,10 +26,10 @@ void context_db_::reset() {
     i._contexts.clear();
 }
 
-
+} // namespace internal
 void genericFunction(const v8::FunctionCallbackInfo<v8::Value> &_v8args) {
-    void *              ctx    = _v8args.Data().IsEmpty() ? nullptr : _v8args.Data().As<v8::External>()->Value();
-    InstanceMethodBase *method = reinterpret_cast<InstanceMethodBase *>(ctx);
+    void *ctx    = _v8args.Data().IsEmpty() ? nullptr : _v8args.Data().As<v8::External>()->Value();
+    auto *method = reinterpret_cast<intl::InstanceMethodBase *>(ctx);
     assert(ctx);
     bool                   ret      = false;
     v8::Isolate *          _isolate = _v8args.GetIsolate();
@@ -45,6 +46,5 @@ void genericFunction(const v8::FunctionCallbackInfo<v8::Value> &_v8args) {
     }
     se::internal::setReturnValue(state.rval(), _v8args);
 }
-
 
 } // namespace sebind

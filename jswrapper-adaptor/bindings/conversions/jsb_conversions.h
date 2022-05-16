@@ -130,6 +130,7 @@ class Mat4;
 class Quaternion;
 } // namespace cc
 
+
 template <typename T>
 bool seval_to_native_ptr(const se::Value &v, T *ret) { // NOLINT(readability-identifier-naming)
     assert(ret != nullptr);

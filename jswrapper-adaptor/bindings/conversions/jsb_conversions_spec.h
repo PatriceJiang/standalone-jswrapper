@@ -29,6 +29,7 @@
 #include <optional>
 #include <variant>
 
+#include "jswrapper/v8/Object.h"
 #include "math/Geometry.h"
 #include "math/Mat3.h"
 #include "math/Mat4.h"

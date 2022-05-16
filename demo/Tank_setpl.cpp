@@ -47,36 +47,45 @@ std::string Tank_nick(war::Tank *n) {
     ss << " nickname from " << __FUNCTION__ << " " << (++id);
     return ss.str();
 }
+
+bool commSeCallback(se::State& s) {
+    std::cout << "Tank3 ..." << std::endl;
+    return true;
+}
+
+
+bool Tank3_constructor(se::State& s) {
+    std::cout << "Tank3 constructor ..." << std::endl;
+    s.thisObject()->setPrivateObject(JSB_MAKE_PRIVATE_OBJECT(war::Tank, "Tank[External]"));
+    return true;
+}
+
 } // namespace
 
 
 bool js_register_war_Tank(se::Object *obj) {
     sebind::class_<war::Weapon> weapon("Weapon");
 
-    weapon.ctor(+[](float r) { return new war::Weapon(); })
-        .ctor<int>()
+    weapon.constructor(+[](float r) { return new war::Weapon(); })
+        .constructor<int>()
         .function("fire2", &war::Weapon::fire2)
         .function("numbers", &war::Weapon::numbers)
         .function("power", &weapon_power)
         .function("addid", &weapon_add_id)
         .function("toString", &weapon_toString)
-        .withRawClass([](se::Class *kls) {
-            // do something with se::Class* directly!
-            std::cout << "class name ---> " << kls->getName() << std::endl;
-        })
-        .gcCallback([](war::Weapon *w) {
+        .finalizer([](war::Weapon *w) {
             std::cout << " dying ... " << w->seqId << std::endl;
         })
         .install(obj);
 
     sebind::class_<war::Tank> tank("Tank2");
-    tank.ctor(&construct_tank)
-        .ctor<std::string>()
+    tank.constructor(&construct_tank)
+        .constructor<std::string>()
         //.ctor<se::Object*>
-        // .ctor<sebind::ThisObject>()
-        .ctor<int, std::string>()
+        // .ctor<ThisObject>()
+        .constructor<int, std::string>()
         .inherits(weapon.prototype())
-        .field("id", &war::Tank::seqId)
+        .property("id", &war::Tank::seqId)
         .property("name", &war::Tank::getName, &war::Tank::setName)
         .property("nick", &Tank_nick, &war::Tank::setName)
         .property("badId", &war::Tank::badID, &war::Tank::updateBadId)
@@ -90,12 +99,20 @@ bool js_register_war_Tank(se::Object *obj) {
         .function("load", &war::Tank::load)
         .function("tick", &war::Tank::tick)
         .function("tick2", &war::Tank::tick2)
-        .gcCallback([](auto *w) {
+        .finalizer([](auto *w) {
             std::cout << " before gc tank " << w->getName() << std::endl;
         })
         .staticFunction("sleep", &Tank_Sleep)
         .staticFunction("sleep", &Tank_Sleep2)
         .staticProperty("rand", &Tank_random, &Tank_seed)
+        .install(obj);
+        
+    sebind::class_<war::Tank> tank3("Tank3");
+    tank3.constructor(&Tank3_constructor)
+        .property("hello", &commSeCallback, &commSeCallback)
+        .function("walk", &commSeCallback)
+        .staticFunction("walk2", &commSeCallback)
+        .staticProperty("hello2", &commSeCallback, &commSeCallback)
         .install(obj);
 
     return true;
