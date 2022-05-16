@@ -14,38 +14,29 @@
 
 namespace sebind {
 
-namespace internal {
+struct ThisObject {
+    se::Object *self;
+};
+
 template <typename T>
-struct remove_class;
-template <typename C, typename R, typename... ARGS>
-struct remove_class<R (C::*)(ARGS...)> {
-    using type = R(ARGS...);
+struct MapThisObject {
+    using type = T;
 };
-template <typename C, typename R, typename... ARGS>
-struct remove_class<R (C::*)(ARGS...) const> {
-    using type = R(ARGS...);
+template <>
+struct MapThisObject<ThisObject> {
+    using type = se::Object *;
 };
-template <typename C, typename R, typename... ARGS>
-struct remove_class<R (C::*)(ARGS...) volatile> {
-    using type = R(ARGS...);
-};
-template <typename C, typename R, typename... ARGS>
-struct remove_class<R (C::*)(ARGS...) const volatile> {
-    using type = R(ARGS...);
-};
-
-template <typename Lambda>
-using LambdaSignature = typename remove_class<decltype(&Lambda::operator())>::type;
-
-} // namespace internal
-
-template <typename Lambda>
-typename internal::LambdaSignature<Lambda> *optional_lambda(const Lambda &f) {
-    return f;
-}
 
 template <typename... ARGS>
 struct TypeList;
+
+template <typename T, typename... OTHERS>
+struct Concat;
+
+template <typename T, typename... OTHERS>
+struct Concat<T, TypeList<OTHERS...>> {
+    using type = TypeList<T, OTHERS...>;
+};
 
 struct ConstructorBase {
     size_t       arg_count              = 0;
@@ -56,8 +47,8 @@ template <typename T>
 struct Constructor;
 
 template <typename... ARGS, size_t... indexes>
-bool convert_js_args_to_tuple(const se::ValueArray &jsArgs, std::tuple<ARGS...> &args, se::Object *ctx, std::index_sequence<indexes...>) {
-    std::array<bool, sizeof...(indexes)> all = {(sevalue_to_native(jsArgs[indexes], &std::get<indexes>(args).data, ctx), ...)};
+bool convert_js_args_to_tuple(const se::ValueArray &jsArgs, std::tuple<ARGS...> &args, se::Object *thisObj, std::index_sequence<indexes...>) {
+    std::array<bool, sizeof...(indexes)> all = {(sevalue_to_native(jsArgs[indexes], &std::get<indexes>(args).data, thisObj), ...)};
     return true;
 }
 template <size_t... indexes>
@@ -71,10 +62,11 @@ struct Constructor<TypeList<T, ARGS...>> : ConstructorBase {
         if ((sizeof...(ARGS)) != state.args().size()) {
             return false;
         }
-        se::PrivateObjectBase *                                    self{nullptr};
+        se::PrivateObjectBase                                                                      *self{nullptr};
+        se::Object                                                                                 *thisObj = state.thisObject();
         std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
-        auto &                                                     jsArgs = state.args();
-        convert_js_args_to_tuple(jsArgs, args, nullptr, std::make_index_sequence<sizeof...(ARGS)>());
+        auto                                                                                       &jsArgs = state.args();
+        convert_js_args_to_tuple(jsArgs, args, thisObj, std::make_index_sequence<sizeof...(ARGS)>());
         self = constructWithTuple(args, std::make_index_sequence<sizeof...(ARGS)>());
         state.thisObject()->setPrivateObject(self);
         return true;
@@ -95,8 +87,9 @@ struct Constructor<T *(*)(ARGS...)> : ConstructorBase {
             return false;
         }
         std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
-        auto &                                                     jsArgs = state.args();
-        convert_js_args_to_tuple(jsArgs, args, nullptr, std::make_index_sequence<sizeof...(ARGS)>());
+        auto                                                                                       &jsArgs  = state.args();
+        se::Object                                                                                 *thisObj = state.thisObject();
+        convert_js_args_to_tuple(jsArgs, args, thisObj, std::make_index_sequence<sizeof...(ARGS)>());
         auto *ptr = constructWithTuple(args, std::make_index_sequence<sizeof...(ARGS)>());
         state.thisObject()->setPrivateData(ptr);
         return true;
@@ -148,9 +141,9 @@ struct InstanceMethod<R (T::*)(ARGS...)> : InstanceMethodBase {
 
     bool invoke(se::State &state) const override {
         constexpr auto indexes{std::make_index_sequence<sizeof...(ARGS)>()};
-        T *            self       = reinterpret_cast<T *>(state.nativeThisObject());
-        se::Object *   thisObject = state.thisObject();
-        const auto &   jsArgs     = state.args();
+        T             *self       = reinterpret_cast<T *>(state.nativeThisObject());
+        se::Object    *thisObject = state.thisObject();
+        const auto    &jsArgs     = state.args();
         if (argN != jsArgs.size()) {
             SE_LOGE("incorret argument size %d, expect %d\n", jsArgs.size(), argN);
             return false;
@@ -183,9 +176,9 @@ struct InstanceMethod<R (*)(T *, ARGS...)> : InstanceMethodBase {
 
     bool invoke(se::State &state) const override {
         constexpr auto indexes{std::make_index_sequence<sizeof...(ARGS)>()};
-        T *            self       = reinterpret_cast<T *>(state.nativeThisObject());
-        se::Object *   thisObject = state.thisObject();
-        const auto &   jsArgs     = state.args();
+        T             *self       = reinterpret_cast<T *>(state.nativeThisObject());
+        se::Object    *thisObject = state.thisObject();
+        const auto    &jsArgs     = state.args();
         if (argN != jsArgs.size()) {
             SE_LOGE("incorret argument size %d, expect %d\n", jsArgs.size(), argN);
             return false;
@@ -207,12 +200,12 @@ struct InstanceMethodOverloaded : InstanceMethodBase {
         bool ret      = false;
         auto argCount = state.args().size();
         for (auto *m : functions) {
-            if (m->arg_count == argCount) {
-                ret = m->invoke(state);
-                if (ret) return true;
+                                         if (m->arg_count == argCount) {
+                                             ret = m->invoke(state);
+                                             if (ret) return true;
             }
         }
-        return false;
+                                     return false;
     }
 };
 
@@ -237,15 +230,15 @@ struct InstanceField<F(T::*)> : InstanceFieldBase {
     type fieldPtr;
 
     bool get(se::State &state) const override {
-        T *         self       = reinterpret_cast<T *>(state.nativeThisObject());
+        T          *self       = reinterpret_cast<T *>(state.nativeThisObject());
         se::Object *thisObject = state.thisObject();
         return nativevalue_to_se((self->*fieldPtr), state.rval(), thisObject);
     }
 
     bool set(se::State &state) const override {
-        T *         self       = reinterpret_cast<T *>(state.nativeThisObject());
+        T          *self       = reinterpret_cast<T *>(state.nativeThisObject());
         se::Object *thisObject = state.thisObject();
-        auto &      args       = state.args();
+        auto       &args       = state.args();
         return sevalue_to_native(args[0], &(self->*fieldPtr), thisObject);
     }
 };
@@ -335,10 +328,10 @@ struct InstanceAttribute<AttributeAccessor<T, Getter, Setter>> : InstanceAttribu
     using getter_class_type = typename get_accessor::class_type;
     using setter_class_type = typename set_accessor::class_type;
 
-    constexpr static bool has_getter            = !std::is_same_v<std::nullptr_t, getter_type>;
-    constexpr static bool has_setter            = !std::is_same_v<std::nullptr_t, setter_type>;
-    constexpr static bool getter_is_member_fn   = has_getter && std::is_member_function_pointer<Getter>::value;
-    constexpr static bool setter_is_member_fn   = has_setter && std::is_member_function_pointer<Setter>::value;
+    constexpr static bool has_getter          = !std::is_same_v<std::nullptr_t, getter_type>;
+    constexpr static bool has_setter          = !std::is_same_v<std::nullptr_t, setter_type>;
+    constexpr static bool getter_is_member_fn = has_getter && std::is_member_function_pointer<Getter>::value;
+    constexpr static bool setter_is_member_fn = has_setter && std::is_member_function_pointer<Setter>::value;
 
     static_assert(!has_getter || std::is_base_of<getter_class_type, T>::value);
     static_assert(!has_setter || std::is_base_of<setter_class_type, T>::value);
@@ -348,7 +341,7 @@ struct InstanceAttribute<AttributeAccessor<T, Getter, Setter>> : InstanceAttribu
 
     bool get(se::State &state) const override {
         if constexpr (has_getter) {
-            T *         self       = reinterpret_cast<T *>(state.nativeThisObject());
+            T          *self       = reinterpret_cast<T *>(state.nativeThisObject());
             se::Object *thisObject = state.thisObject();
             if constexpr (getter_is_member_fn) {
                 return nativevalue_to_se((self->*getterPtr)(), state.rval(), thisObject);
@@ -361,9 +354,9 @@ struct InstanceAttribute<AttributeAccessor<T, Getter, Setter>> : InstanceAttribu
 
     bool set(se::State &state) const override {
         if constexpr (has_setter) {
-            T *                                                             self       = reinterpret_cast<T *>(state.nativeThisObject());
-            se::Object *                                                    thisObject = state.thisObject();
-            auto &                                                          args       = state.args();
+            T                                                              *self       = reinterpret_cast<T *>(state.nativeThisObject());
+            se::Object                                                     *thisObject = state.thisObject();
+            auto                                                           &args       = state.args();
             HolderType<set_value_type, std::is_reference_v<set_value_type>> temp;
             sevalue_to_native(args[0], &(temp.data), thisObject);
             if constexpr (setter_is_member_fn) {
@@ -403,7 +396,7 @@ struct StaticMethod<R (*)(ARGS...)> : StaticMethodBase {
 
     bool invoke(se::State &state) const override {
         constexpr auto indexes{std::make_index_sequence<sizeof...(ARGS)>()};
-        const auto &   jsArgs = state.args();
+        const auto    &jsArgs = state.args();
         if (argN != jsArgs.size()) {
             SE_LOGE("incorret argument size %d, expect %d\n", jsArgs.size(), argN);
             return false;
@@ -425,12 +418,12 @@ struct StaticMethodOverloaded : StaticMethodBase {
         bool ret      = false;
         auto argCount = state.args().size();
         for (auto *m : functions) {
-            if (m->arg_count == argCount) {
-                ret = m->invoke(state);
-                if (ret) return true;
+                                       if (m->arg_count == argCount) {
+                                           ret = m->invoke(state);
+                                           if (ret) return true;
             }
         }
-        return false;
+                                   return false;
     }
 };
 
@@ -514,7 +507,7 @@ struct StaticAttribute<SAttributeAccessor<T, Getter, Setter>> : StaticAttributeB
 
     bool set(se::State &state) const override {
         if constexpr (has_setter) {
-            auto &                                                          args = state.args();
+            auto                                                           &args = state.args();
             HolderType<set_value_type, std::is_reference_v<set_value_type>> temp;
             sevalue_to_native(args[0], &(temp.data), nullptr);
             (*setterPtr)(temp.value());
@@ -537,14 +530,14 @@ public:
         std::vector<ConstructorBase *>                                constructors;
         std::vector<GcCallbackBase *>                                 gcCallbacks;
         std::string                                                   className;
-        se::Class *                                                   kls = nullptr;
-        //se::Object *                                                  nsObject    = nullptr;
+        se::Class                                                    *kls = nullptr;
+        // se::Object *                                                  nsObject    = nullptr;
         se::Object *parentProto = nullptr;
     };
     inline context_ *operator[](const std::string &key) {
         return this->operator[](key.c_str());
     }
-    context_ *          operator[](const char *key);
+    context_           *operator[](const char *key);
     static context_db_ &instance();
     static void         reset();
 
@@ -579,7 +572,7 @@ public:
     bool install(se::Object *nsObject);
 
     // set namespace object, parent
-    //class_ &namespaceObject(se::Object *nsObj);
+    // class_ &namespaceObject(se::Object *nsObj);
 
     template <typename... ARGS>
     class_ &ctor();
@@ -616,7 +609,7 @@ public:
 
 private:
     bool                               _installed{false};
-    context_ *                         _ctx{nullptr};
+    context_                          *_ctx{nullptr};
     std::vector<void (*)(se::Class *)> _delayBlocks;
     template <typename R>
     friend void genericConstructor(const v8::FunctionCallbackInfo<v8::Value> &);
@@ -635,11 +628,11 @@ class_<T> &class_<T>::inherits(se::Object *obj) {
     return *this;
 }
 
-//template <typename T>
-//class_<T> &class_<T>::namespaceObject(se::Object *nsobj) {
-//    _ctx->nsObject = nsobj;
-//    return *this;
-//}
+// template <typename T>
+// class_<T> &class_<T>::namespaceObject(se::Object *nsobj) {
+//     _ctx->nsObject = nsobj;
+//     return *this;
+// }
 
 template <typename T>
 template <typename... ARGS>
@@ -761,13 +754,13 @@ void genericGcCallback(se::PrivateObjectBase *privateObject) {
 template <typename T>
 void genericConstructor(const v8::FunctionCallbackInfo<v8::Value> &_v8args) {
     using context_type       = typename class_<T>::context_;
-    v8::Isolate *   _isolate = _v8args.GetIsolate();
+    v8::Isolate    *_isolate = _v8args.GetIsolate();
     v8::HandleScope _hs(_isolate);
     bool            ret = false;
     se::ValueArray  args;
     args.reserve(10);
     se::internal::jsToSeArgs(_v8args, args);
-    auto *      self       = reinterpret_cast<context_type *>(_v8args.Data().IsEmpty() ? nullptr : _v8args.Data().As<v8::External>()->Value());
+    auto       *self       = reinterpret_cast<context_type *>(_v8args.Data().IsEmpty() ? nullptr : _v8args.Data().As<v8::External>()->Value());
     se::Object *thisObject = se::Object::_createJSObject(self->kls, _v8args.This());
     if (!self->gcCallbacks.empty()) {
         auto *finalizer = &genericGcCallback<T>;
@@ -801,14 +794,14 @@ void genericAccessorSet(v8::Local<v8::Name> property, v8::Local<v8::Value> _valu
                         const v8::PropertyCallbackInfo<void> &_v8args) {
     auto *attr = reinterpret_cast<ContextType *>(_v8args.Data().IsEmpty() ? nullptr : _v8args.Data().As<v8::External>()->Value());
     assert(attr);
-    v8::Isolate *          _isolate = _v8args.GetIsolate();
+    v8::Isolate           *_isolate = _v8args.GetIsolate();
     v8::HandleScope        _hs(_isolate);
     bool                   ret           = true;
     se::PrivateObjectBase *privateObject = static_cast<se::PrivateObjectBase *>(se::internal::getPrivate(_isolate, _v8args.This(), 0));
-    se::Object *           thisObject    = reinterpret_cast<se::Object *>(se::internal::getPrivate(_isolate, _v8args.This(), 1));
-    se::ValueArray &       args          = se::gValueArrayPool.get(1);
+    se::Object            *thisObject    = reinterpret_cast<se::Object *>(se::internal::getPrivate(_isolate, _v8args.This(), 1));
+    se::ValueArray        &args          = se::gValueArrayPool.get(1);
     se::CallbackDepthGuard depthGuard{args, se::gValueArrayPool._depth};
-    se::Value &            data{args[0]};
+    se::Value             &data{args[0]};
     se::internal::jsToSeValue(_isolate, _value, &data);
     se::State state(thisObject, privateObject, args);
     ret = attr->set(state);
@@ -821,11 +814,11 @@ void genericAccessorGet(v8::Local<v8::Name>                        property,
                         const v8::PropertyCallbackInfo<v8::Value> &_v8args) {
     auto *attr = reinterpret_cast<ContextType *>(_v8args.Data().IsEmpty() ? nullptr : _v8args.Data().As<v8::External>()->Value());
     assert(attr);
-    v8::Isolate *          _isolate = _v8args.GetIsolate();
+    v8::Isolate           *_isolate = _v8args.GetIsolate();
     v8::HandleScope        _hs(_isolate);
     bool                   ret           = true;
     se::PrivateObjectBase *privateObject = static_cast<se::PrivateObjectBase *>(se::internal::getPrivate(_isolate, _v8args.This(), 0));
-    se::Object *           thisObject    = reinterpret_cast<se::Object *>(se::internal::getPrivate(_isolate, _v8args.This(), 1));
+    se::Object            *thisObject    = reinterpret_cast<se::Object *>(se::internal::getPrivate(_isolate, _v8args.This(), 1));
     se::State              state(thisObject, privateObject);
     ret = attr->get(state);
     if (!ret) {

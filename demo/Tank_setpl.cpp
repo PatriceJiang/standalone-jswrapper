@@ -64,16 +64,16 @@ bool js_register_war_Tank(se::Object *obj) {
             // do something with se::Class* directly!
             std::cout << "class name ---> " << kls->getName() << std::endl;
         })
-        .gcCallback(sebind::optional_lambda([](war::Weapon *w) {
+        .gcCallback([](war::Weapon *w) {
             std::cout << " dying ... " << w->seqId << std::endl;
-        }))
+        })
         .install(obj);
 
     sebind::class_<war::Tank> tank("Tank2");
     tank.ctor(&construct_tank)
         .ctor<std::string>()
         //.ctor<se::Object*>
-        //.ctor<sebind::ThisObject>()
+        // .ctor<sebind::ThisObject>()
         .ctor<int, std::string>()
         .inherits(weapon.prototype())
         .field("id", &war::Tank::seqId)

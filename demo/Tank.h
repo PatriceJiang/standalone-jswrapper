@@ -3,6 +3,11 @@
 #include <iostream>
 #include <vector>
 #include <string>
+
+namespace se {
+class Object;
+}
+
 namespace war {
 
 class Weapon {
@@ -31,6 +36,8 @@ class Tank : public Weapon {
 public:
     Tank(const std::string &name);
     Tank(int i, const std::string &name);
+    Tank(se::Object *jsthis) {
+    }
 
     virtual ~Tank() {
         std::cout << "finalize tank " << name << ", id " << seqId << std::endl;

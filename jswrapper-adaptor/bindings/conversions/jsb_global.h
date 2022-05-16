@@ -50,12 +50,14 @@ template <typename T, typename... ARGS>
 typename std::enable_if<std::is_base_of<cc::RefCounted, T>::value, se::PrivateObjectBase *>::type
 jsb_make_private_object(ARGS &&...args) { //NOLINT(readability-identifier-naming)
     //return se::raw_private_data(new T(std::forward<ARGS>(args)...));
+    static_assert(std::is_constructible<T, ARGS...>::value);
     return se::ccshared_private_object(new T(std::forward<ARGS>(args)...));
 }
 
 template <typename T, typename... ARGS>
 typename std::enable_if<!std::is_base_of<cc::RefCounted, T>::value, se::PrivateObjectBase *>::type
 jsb_make_private_object(ARGS &&...args) { //NOLINT(readability-identifier-naming)
+    static_assert(std::is_constructible<T, ARGS...>::value);
     return se::shared_private_object(std::make_shared<T>(std::forward<ARGS>(args)...));
 }
 
