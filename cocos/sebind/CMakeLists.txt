@@ -3,8 +3,11 @@ cmake_minimum_required(VERSION 3.8)
 project(sebind CXX)
 
 add_library(sebind
-    class.h
-    class.cpp
+    class_v8.h
+    class_v8.cpp
+    internal/common.h
+    internal/common.cpp
+    sebind.h
 )
 
 

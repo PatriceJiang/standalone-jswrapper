@@ -3,7 +3,7 @@
 #include <sstream>
 
 #include "Tank.h"
-#include "class.h"
+#include "sebind.h"
 
 
 // extension functions for 
@@ -78,13 +78,13 @@ bool js_register_war_Tank(se::Object *obj) {
         })
         .install(obj);
 
-    sebind::class_<war::Tank> tank("Tank2");
+    sebind::class_<war::Tank> tank("Tank2",weapon.prototype());
     tank.constructor(&construct_tank)
         .constructor<std::string>()
         //.ctor<se::Object*>
         // .ctor<ThisObject>()
         .constructor<int, std::string>()
-        .inherits(weapon.prototype())
+        // .inherits(weapon.prototype())
         .property("id", &war::Tank::seqId)
         .property("name", &war::Tank::getName, &war::Tank::setName)
         .property("nick", &Tank_nick, &war::Tank::setName)
