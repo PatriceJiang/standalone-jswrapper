@@ -51,15 +51,15 @@ public:
         this->name = name;
     }
 
-    void load(Weapon *w) {
+    void load(Weapon *w) const {
         std::cout << "load weapon seqId " << w->seqId << std::endl;
     }
 
-    void tick() {}
-    void tick2(int) {}
+    void tick() const {}
+    void tick2(volatile int) const {}
 
-    size_t badID() { return seqId; }
-    bool   updateBadId(int ) {
+    size_t badID() const { return seqId; }
+    bool   updateBadId(int ) const {
   /*      id = nid;
         c*/
         return true;

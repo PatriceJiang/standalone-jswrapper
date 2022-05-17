@@ -364,7 +364,7 @@ struct Constructor<T *(*)(ARGS...)> : ConstructorBase {
 
 template <typename T>
 struct Finalizer : FinalizerBase {
-    using type = void (*)(T *);
+    using type     = void (*)(T *);
     using arg_type = T;
     type func;
     void finalize(void *ptr) override {
@@ -375,6 +375,41 @@ struct Finalizer : FinalizerBase {
 template <typename T, typename R, typename... ARGS>
 struct InstanceMethod<R (T::*)(ARGS...)> : InstanceMethodBase {
     using type                          = R (T::*)(ARGS...);
+    using return_type                   = R;
+    using class_type                    = std::remove_cv_t<T>;
+    constexpr static size_t ARG_N       = sizeof...(ARGS);
+    constexpr static bool   RETURN_VOID = std::is_same<void, R>::value;
+
+    type func = nullptr;
+
+    template <typename... ARGS_HT, size_t... indexes>
+    R callWithTuple(T *self, std::tuple<ARGS_HT...> &args, std::index_sequence<indexes...> /*unused*/) const {
+        return ((reinterpret_cast<T *>(self))->*func)(std::get<indexes>(args).value()...);
+    }
+
+    bool invoke(se::State &state) const override {
+        constexpr auto indexes{std::make_index_sequence<sizeof...(ARGS)>()};
+        T             *self       = reinterpret_cast<T *>(state.nativeThisObject());
+        se::Object    *thisObject = state.thisObject();
+        const auto    &jsArgs     = state.args();
+        if (ARG_N != jsArgs.size()) {
+            SE_LOGE("incorret argument size %d, expect %d\n", static_cast<int>(jsArgs.size()), static_cast<int>(ARG_N));
+            return false;
+        }
+        std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
+        convert_js_args_to_tuple(jsArgs, args, thisObject, indexes);
+        if constexpr (RETURN_VOID) {
+            callWithTuple(self, args, indexes);
+        } else {
+            nativevalue_to_se(callWithTuple(self, args, indexes), state.rval(), thisObject);
+        }
+        return true;
+    }
+};
+
+template <typename T, typename R, typename... ARGS>
+struct InstanceMethod<R (T::*)(ARGS...) const> : InstanceMethodBase {
+    using type                          = R (T::*)(ARGS...) const;
     using return_type                   = R;
     using class_type                    = std::remove_cv_t<T>;
     constexpr static size_t ARG_N       = sizeof...(ARGS);
@@ -511,9 +546,9 @@ struct AccessorSet<std::nullptr_t> {
 };
 
 template <typename T, typename R>
-struct AccessorGet<R(T::*)> {
+struct AccessorGet<R(T::*)()> {
     using class_type  = T;
-    using type        = R(T::*);
+    using type        = R(T::*)();
     using return_type = R;
     static_assert(!std::is_void_v<R>);
 };
@@ -522,6 +557,22 @@ template <typename T, typename R, typename F>
 struct AccessorSet<R (T::*)(F)> {
     using class_type          = T;
     using type                = R (T::*)(F);
+    using value_type          = F;
+    using ignored_return_type = R;
+};
+
+template <typename T, typename R>
+struct AccessorGet<R (T::*)() const> {
+    using class_type  = T;
+    using type        = R(T::*)() const;
+    using return_type = R;
+    static_assert(!std::is_void_v<R>);
+};
+
+template <typename T, typename R, typename F>
+struct AccessorSet<R (T::*)(F) const> {
+    using class_type          = T;
+    using type                = R (T::*)(F) const;
     using value_type          = F;
     using ignored_return_type = R;
 };
