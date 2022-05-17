@@ -1,16 +1,18 @@
 #pragma once
 
 #include <array>
-#include <tuple>
 #include <cstdint>
+#include <tuple>
 #include <type_traits>
+#include <utility>
 
 #include "conversions/jsb_conversions.h"
 #include "conversions/jsb_global.h"
+#include "jswrapper/v8/Object.h"
 
 namespace sebind {
 
-
+struct ThisObject {};
 using SeCallbackType  = bool(se::State &);
 using SeCallbackFnPtr = bool (*)(se::State &);
 
@@ -20,12 +22,150 @@ template <typename... ARGS>
 struct TypeList;
 
 template <typename T, typename... OTHERS>
-struct Concat;
+struct TypeList<T, OTHERS...> {
+    constexpr static size_t COUNT = 1 + sizeof...(OTHERS);
+    using head                    = T;
+    using tail                    = TypeList<OTHERS...>;
+    using tuple_type              = std::tuple<T, OTHERS...>;
+};
+
+template <>
+struct TypeList<> {
+    constexpr static size_t COUNT = 0;
+    using head                    = void;
+    using tail                    = TypeList<>;
+    using tuple_type              = std::tuple<>;
+};
+
+template <typename T, typename O>
+struct Cons;
 
 template <typename T, typename... OTHERS>
-struct Concat<T, TypeList<OTHERS...>> {
+struct Cons<T, TypeList<OTHERS...>> {
     using type = TypeList<T, OTHERS...>;
 };
+
+template <template <typename, bool> typename M, typename List>
+struct MapTypeListToTuple;
+
+template <template <typename, bool> typename M, typename... OTHERS>
+struct MapTypeListToTuple<M, TypeList<OTHERS...>> {
+    using tuple = std::tuple<M<OTHERS, std::is_reference<OTHERS>::value>...>;
+};
+
+template <typename T>
+struct IsThisObject {
+    // NOLINTNEXTLINE
+    constexpr static bool value = std::is_same<ThisObject,
+                                               typename std::remove_cv<
+                                                   typename std::remove_reference<
+                                                       typename std::remove_pointer<T>::type>::type>::type>::value;
+};
+
+template <typename... Ts>
+struct FilterThisObject;
+
+template <typename T, typename... OTHERS>
+struct FilterThisObject<T, OTHERS...> {
+    using nonthis_type_list = std::conditional_t<IsThisObject<T>::value,
+                                                 typename FilterThisObject<OTHERS...>::nonthis_type_list,
+                                                 typename Cons<T, typename FilterThisObject<OTHERS...>::nonthis_type_list>::type>;
+    using real_type_list    = typename Cons<std::conditional_t<IsThisObject<T>::value, se::Object *, T>,
+                                         typename FilterThisObject<OTHERS...>::real_type_list>::type;
+};
+
+template <>
+struct FilterThisObject<> {
+    using nonthis_type_list = TypeList<>;
+    using real_type_list    = TypeList<>;
+};
+
+template <size_t From, size_t To, bool Skip>
+struct MapArg {
+    constexpr static size_t FROM = From;
+    constexpr static size_t TO   = To;
+    constexpr static bool   SKIP = Skip;
+};
+
+template <size_t From, size_t Remain>
+struct GenMapArgImpl {
+    using list = typename Cons<MapArg<From, 0, true>, typename GenMapArgImpl<From + 1, Remain - 1>::list>::type;
+};
+
+template <size_t From>
+struct GenMapArgImpl<From, 0> {
+    using list = TypeList<>;
+};
+
+template <size_t N>
+struct GenMapArg {
+    using list = typename GenMapArgImpl<0, N>::list;
+};
+
+template <int FullIdx, int IncompleteIdx, int FullRemain, int IncompleteRemain, typename FullTypeList, typename IncompleteTypeList>
+struct TypeListMapImpl {
+    constexpr static bool SHOULD_SKIP            = IsThisObject<typename FullTypeList::head>::value;
+    constexpr static int  NEXT_INCOMPLETE        = SHOULD_SKIP ? IncompleteIdx : IncompleteIdx + 1;
+    constexpr static int  NEXT_INCOMPLETE_REMAIN = SHOULD_SKIP ? IncompleteRemain : IncompleteRemain - 1;
+    using full_tail                              = typename FullTypeList::tail;
+    using incomplete_tail                        = std::conditional_t<SHOULD_SKIP, IncompleteTypeList, typename IncompleteTypeList::tail>;
+    using map_value                              = MapArg<FullIdx, IncompleteIdx, SHOULD_SKIP>;
+    using map_list                               = typename Cons<map_value, typename TypeListMapImpl<FullIdx + 1, NEXT_INCOMPLETE, FullRemain - 1, NEXT_INCOMPLETE_REMAIN, full_tail, incomplete_tail>::map_list>::type;
+};
+
+template <int FullIdx, int IncompleteIdx, typename FullTypeList, typename IncompleteTypeList>
+struct TypeListMapImpl<FullIdx, IncompleteIdx, 0, 0, FullTypeList, IncompleteTypeList> {
+    using map_list = TypeList<>;
+};
+
+template <int FullIdx, int IncompleteIdx, int FullRemain, typename FullTypeList, typename IncompleteTypeList>
+struct TypeListMapImpl<FullIdx, IncompleteIdx, FullRemain, 0, FullTypeList, IncompleteTypeList> {
+    static_assert(FullRemain == FullTypeList::COUNT);
+    using map_list = typename GenMapArg<FullRemain>::list;
+};
+
+template <typename FullTypeList, typename IncompleteTypeList>
+struct TypeListMap {
+    using map_list = typename TypeListMapImpl<0, 0, FullTypeList::COUNT, IncompleteTypeList::COUNT, FullTypeList, IncompleteTypeList>::map_list;
+};
+
+template <typename T>
+struct UnmapArgTypes;
+
+template <typename... ARGS>
+struct UnmapArgTypes<TypeList<ARGS...>> {
+    using declare_args                 = TypeList<ARGS...>;
+    using jsinput_args                 = typename FilterThisObject<ARGS...>::nonthis_type_list;
+    using cpp_args                     = typename FilterThisObject<ARGS...>::real_type_list;
+    using cpp_args_tuple               = typename cpp_args::tuple_type;
+    using js_args_tuple                = typename jsinput_args::tuple_type;
+    using map_list                     = typename TypeListMap<declare_args, jsinput_args>::map_list;
+    static constexpr size_t FULL_ARGN  = sizeof...(ARGS);
+    static constexpr size_t NEW_ARGN   = jsinput_args::COUNT;
+    static constexpr bool   NEED_REMAP = FULL_ARGN != NEW_ARGN;
+};
+
+struct ArgumentFilter {
+    template <typename MapTuple, typename Tuple, size_t index>
+    static auto forward(se::Object *self, Tuple &tuple) {
+        constexpr static MapTuple TUPLE_VAL;
+        using map_arg = std::remove_reference_t<decltype(std::get<index>(TUPLE_VAL))>;
+        if constexpr (map_arg::SKIP) {
+            return self;
+        } else {
+            return std::get<index>(tuple).value();
+        }
+    }
+};
+
+template <typename UnmapType, typename TupleIn, typename TupleOut, size_t... indexes>
+void mapTupleArguments(se::Object *self, TupleIn &input, TupleOut &output, std::index_sequence<indexes...> /*args*/) {
+    if constexpr (std::tuple_size<TupleOut>::value > 0) {
+        using map_tuple = typename UnmapType::map_list::tuple_type;
+        // output = {ArgumentFilter<std::remove_reference_t<decltype(std::get<indexes>(input))>>::forward(self, std::get<std::remove_reference_t<decltype(std::get<indexes>(REMAP))>::TO>(input))...};
+        output = {ArgumentFilter::forward<map_tuple, TupleIn, indexes>(self, input)...};
+    }
+}
 
 template <size_t M, size_t N>
 struct AndAll {
@@ -152,21 +292,36 @@ struct StaticAttribute;
 template <typename T, typename... ARGS>
 struct Constructor<TypeList<T, ARGS...>> : ConstructorBase {
     bool construct(se::State &state) override {
-        if ((sizeof...(ARGS)) != state.args().size()) {
-            return false;
+        using unmap_types      = UnmapArgTypes<TypeList<ARGS...>>;
+        using args_holder_type = typename MapTypeListToTuple<HolderType, typename unmap_types::jsinput_args>::tuple;
+        se::PrivateObjectBase *self{nullptr};
+        se::Object            *thisObj = state.thisObject();
+        args_holder_type       args{};
+        const auto            &jsArgs = state.args();
+        convert_js_args_to_tuple(jsArgs, args, thisObj, std::make_index_sequence<unmap_types::NEW_ARGN>());
+        if constexpr (unmap_types::NEED_REMAP) {
+            using map_list_type  = typename unmap_types::map_list;
+            using map_tuple_type = typename unmap_types::cpp_args_tuple;
+
+            static_assert(map_list_type::COUNT == sizeof...(ARGS));
+
+            map_tuple_type remapArgs;
+            mapTupleArguments<unmap_types>(thisObj, args, remapArgs, std::make_index_sequence<unmap_types::FULL_ARGN>{});
+            self = constructWithTuple(remapArgs, std::make_index_sequence<unmap_types::FULL_ARGN>{});
+        } else {
+            self = constructWithTupleValue(args, std::make_index_sequence<sizeof...(ARGS)>());
         }
-        se::PrivateObjectBase                                     *self{nullptr};
-        se::Object                                                *thisObj = state.thisObject();
-        std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
-        const auto                                                &jsArgs = state.args();
-        convert_js_args_to_tuple(jsArgs, args, thisObj, std::make_index_sequence<sizeof...(ARGS)>());
-        self = constructWithTuple(args, std::make_index_sequence<sizeof...(ARGS)>());
         state.thisObject()->setPrivateObject(self);
         return true;
     }
 
     template <typename... ARGS_HT, size_t... indexes>
     se::PrivateObjectBase *constructWithTuple(std::tuple<ARGS_HT...> &args, std::index_sequence<indexes...> /*unused*/) {
+        return JSB_MAKE_PRIVATE_OBJECT(T, std::get<indexes>(args)...);
+    }
+
+    template <typename... ARGS_HT, size_t... indexes>
+    se::PrivateObjectBase *constructWithTupleValue(std::tuple<ARGS_HT...> &args, std::index_sequence<indexes...> /*unused*/) {
         return JSB_MAKE_PRIVATE_OBJECT(T, std::get<indexes>(args).value()...);
     }
 };
@@ -183,7 +338,7 @@ struct Constructor<T *(*)(ARGS...)> : ConstructorBase {
         const auto                                                &jsArgs  = state.args();
         se::Object                                                *thisObj = state.thisObject();
         convert_js_args_to_tuple(jsArgs, args, thisObj, std::make_index_sequence<sizeof...(ARGS)>());
-        auto *ptr = constructWithTuple(args, std::make_index_sequence<sizeof...(ARGS)>());
+        T *ptr = constructWithTuple(args, std::make_index_sequence<sizeof...(ARGS)>());
         state.thisObject()->setPrivateData(ptr);
         return true;
     }
@@ -259,7 +414,7 @@ struct InstanceMethod<R (*)(T *, ARGS...)> : InstanceMethodBase {
         se::Object    *thisObject = state.thisObject();
         const auto    &jsArgs     = state.args();
         if (ARG_N != jsArgs.size()) {
-            SE_LOGE("incorret argument size %d, expect %d\n", jsArgs.size(), ARG_N);
+            SE_LOGE("incorret argument size %d, expect %d\n", static_cast<int>(jsArgs.size()), static_cast<int>(ARG_N));
             return false;
         }
         std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
@@ -444,7 +599,7 @@ struct StaticMethod<R (*)(ARGS...)> : StaticMethodBase {
         constexpr auto indexes{std::make_index_sequence<sizeof...(ARGS)>()};
         const auto    &jsArgs = state.args();
         if (ARG_N != jsArgs.size()) {
-            SE_LOGE("incorret argument size %d, expect %d\n", jsArgs.size(), ARG_N);
+            SE_LOGE("incorret argument size %d, expect %d\n", static_cast<int>(jsArgs.size()), static_cast<int>(ARG_N));
             return false;
         }
         std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
@@ -585,6 +740,7 @@ struct FunctionWrapper;
 template <typename R, typename... ARGS>
 struct FunctionWrapper<R *(*)(ARGS...)> {
     using type                    = R *(*)(ARGS...);
+    using arg_list                = TypeList<ARGS...>;
     static constexpr size_t ARG_N = sizeof...(ARGS);
 };
 

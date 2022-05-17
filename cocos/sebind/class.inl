@@ -16,6 +16,7 @@
 
 namespace sebind {
 
+
 template <typename T>
 class class_ { //NOLINT
 public:
@@ -97,9 +98,10 @@ template <typename T>
 template <typename... ARGS>
 class_<T> &class_<T>::constructor() {
     using CTYPE = intl::Constructor<intl::TypeList<T, ARGS...>>;
+    using MTYPE = intl::UnmapArgTypes<intl::TypeList<ARGS...>>;
     // static_assert(!std::is_same_v<void, InstanceMethod<Method>::return_type>);
     auto *constructp      = new CTYPE();
-    constructp->arg_count = sizeof...(ARGS);
+    constructp->arg_count = MTYPE::NEW_ARGN;
     _ctx->constructors.emplace_back(constructp);
     return *this;
 }

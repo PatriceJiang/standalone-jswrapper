@@ -1,6 +1,13 @@
 
 console.log(`run script hello.js`);
 
+let t3 = new Tank3;
+t3.hello;
+t3.walk();
+Tank3.walk2();
+Tank3.hello2;
+t3.hello = 333;
+Tank3.hello = 4555;
 
 
  let tank = new Tank2("Tiger");
@@ -40,13 +47,6 @@ for(let i = 0;  i < 10 ;i ++) {
 }
 
 
-let t3 = new Tank3;
-t3.hello;
-t3.walk();
-Tank3.walk2();
-Tank3.hello2;
-t3.hello = 333;
-Tank3.hello = 4555;
 
 console.log(`run script end!!`);
 
