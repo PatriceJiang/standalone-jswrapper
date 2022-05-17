@@ -7,8 +7,6 @@
 #include <utility>
 
 #include "conversions/jsb_conversions.h"
-#include "conversions/jsb_global.h"
-#include "jswrapper/v8/Object.h"
 
 namespace sebind {
 
@@ -171,8 +169,7 @@ template <typename Mapping, typename TupleIn, typename TupleOut, size_t... index
 void mapTupleArguments(se::Object *self, TupleIn &input, TupleOut &output, std::index_sequence<indexes...> /*args*/) {
     if constexpr (std::tuple_size<TupleOut>::value > 0) {
         using map_tuple = typename Mapping::mapping_list::tuple_type;
-        // output = {ArgumentFilter<std::remove_reference_t<decltype(std::get<indexes>(input))>>::forward(self, std::get<std::remove_reference_t<decltype(std::get<indexes>(REMAP))>::TO>(input))...};
-        output = {ArgumentFilter::forward<map_tuple, TupleIn, indexes>(self, input)...};
+        output          = {ArgumentFilter::forward<map_tuple, TupleIn, indexes>(self, input)...};
     }
 }
 
@@ -207,10 +204,10 @@ struct ConstructorBase {
     size_t          arg_count = 0;
     SeCallbackFnPtr bfnPtr{nullptr};
     virtual bool    construct(se::State &state) {
-           if (bfnPtr) {
-               return (*bfnPtr)(state);
+        if (bfnPtr) {
+            return (*bfnPtr)(state);
         }
-           return false;
+        return false;
     }
 };
 struct InstanceMethodBase {
@@ -219,10 +216,10 @@ struct InstanceMethodBase {
     size_t          arg_count;
     SeCallbackFnPtr bfnPtr{nullptr};
     virtual bool    invoke(se::State &state) const {
-           if (bfnPtr) {
-               return (*bfnPtr)(state);
+        if (bfnPtr) {
+            return (*bfnPtr)(state);
         }
-           return false;
+        return false;
     }
 };
 struct FinalizerBase {
@@ -235,7 +232,7 @@ struct InstanceFieldBase {
     SeCallbackFnPtr bfnSetPtr{nullptr};
     SeCallbackFnPtr bfnGetPtr{nullptr};
     virtual bool    get(se::State &state) const {
-           if (bfnGetPtr) return (*bfnGetPtr)(state);
+        if (bfnGetPtr) return (*bfnGetPtr)(state);
         return false;
     }
     virtual bool set(se::State &state) const {
@@ -250,7 +247,7 @@ struct InstanceAttributeBase {
     SeCallbackFnPtr bfnSetPtr{nullptr};
     SeCallbackFnPtr bfnGetPtr{nullptr};
     virtual bool    get(se::State &state) const {
-           if (bfnGetPtr) return (*bfnGetPtr)(state);
+        if (bfnGetPtr) return (*bfnGetPtr)(state);
         return false;
     }
     virtual bool set(se::State &state) const {
@@ -265,7 +262,7 @@ struct StaticMethodBase {
     size_t          arg_count;
     SeCallbackFnPtr bfnPtr{nullptr};
     virtual bool    invoke(se::State &state) const {
-           if (bfnPtr) return (*bfnPtr)(state);
+        if (bfnPtr) return (*bfnPtr)(state);
         return false;
     }
 };
@@ -275,7 +272,7 @@ struct StaticAttributeBase {
     SeCallbackFnPtr bfnSetPtr{nullptr};
     SeCallbackFnPtr bfnGetPtr{nullptr};
     virtual bool    get(se::State &state) const {
-           if (bfnGetPtr) return (*bfnGetPtr)(state);
+        if (bfnGetPtr) return (*bfnGetPtr)(state);
         return false;
     }
     virtual bool set(se::State &state) const {
@@ -308,9 +305,9 @@ struct Constructor<TypeList<T, ARGS...>> : ConstructorBase {
         using unmap_types      = TypeMapping<TypeList<ARGS...>>;
         using args_holder_type = typename MapTypeListToTuple<HolderType, typename unmap_types::input_types>::tuple;
         se::PrivateObjectBase *self{nullptr};
-        se::Object            *thisObj = state.thisObject();
+        se::Object *           thisObj = state.thisObject();
         args_holder_type       args{};
-        const auto            &jsArgs = state.args();
+        const auto &           jsArgs = state.args();
         convert_js_args_to_tuple(jsArgs, args, thisObj, std::make_index_sequence<unmap_types::NEW_ARGN>());
         if constexpr (unmap_types::NEED_REMAP) {
             using map_list_type  = typename unmap_types::mapping_list;
@@ -318,7 +315,7 @@ struct Constructor<TypeList<T, ARGS...>> : ConstructorBase {
 
             static_assert(map_list_type::COUNT == sizeof...(ARGS));
 
-            map_tuple_type remapArgs;
+            map_tuple_type remapArgs; //TODO: optimize copy arguments
             mapTupleArguments<unmap_types>(thisObj, args, remapArgs, std::make_index_sequence<unmap_types::FULL_ARGN>{});
             self = constructWithTuple(remapArgs, std::make_index_sequence<unmap_types::FULL_ARGN>{});
         } else {
@@ -348,8 +345,8 @@ struct Constructor<T *(*)(ARGS...)> : ConstructorBase {
             return false;
         }
         std::tuple<HolderType<ARGS, std::is_reference_v<ARGS>>...> args{};
-        const auto                                                &jsArgs  = state.args();
-        se::Object                                                *thisObj = state.thisObject();
+        const auto &                                               jsArgs  = state.args();
+        se::Object *                                               thisObj = state.thisObject();
         convert_js_args_to_tuple(jsArgs, args, thisObj, std::make_index_sequence<sizeof...(ARGS)>());
         T *ptr = constructWithTuple(args, std::make_index_sequence<sizeof...(ARGS)>());
         state.thisObject()->setPrivateData(ptr);
@@ -389,9 +386,9 @@ struct InstanceMethod<R (T::*)(ARGS...)> : InstanceMethodBase {
 
     bool invoke(se::State &state) const override {
         constexpr auto indexes{std::make_index_sequence<sizeof...(ARGS)>()};
-        T             *self       = reinterpret_cast<T *>(state.nativeThisObject());
-        se::Object    *thisObject = state.thisObject();
-        const auto    &jsArgs     = state.args();
+        T *            self       = reinterpret_cast<T *>(state.nativeThisObject());
+        se::Object *   thisObject = state.thisObject();
+        const auto &   jsArgs     = state.args();
         if (ARG_N != jsArgs.size()) {
             SE_LOGE("incorret argument size %d, expect %d\n", static_cast<int>(jsArgs.size()), static_cast<int>(ARG_N));
             return false;
@@ -424,9 +421,9 @@ struct InstanceMethod<R (T::*)(ARGS...) const> : InstanceMethodBase {
 
     bool invoke(se::State &state) const override {
         constexpr auto indexes{std::make_index_sequence<sizeof...(ARGS)>()};
-        T             *self       = reinterpret_cast<T *>(state.nativeThisObject());
-        se::Object    *thisObject = state.thisObject();
-        const auto    &jsArgs     = state.args();
+        T *            self       = reinterpret_cast<T *>(state.nativeThisObject());
+        se::Object *   thisObject = state.thisObject();
+        const auto &   jsArgs     = state.args();
         if (ARG_N != jsArgs.size()) {
             SE_LOGE("incorret argument size %d, expect %d\n", static_cast<int>(jsArgs.size()), static_cast<int>(ARG_N));
             return false;
@@ -459,9 +456,9 @@ struct InstanceMethod<R (*)(T *, ARGS...)> : InstanceMethodBase {
 
     bool invoke(se::State &state) const override {
         constexpr auto indexes{std::make_index_sequence<sizeof...(ARGS)>()};
-        T             *self       = reinterpret_cast<T *>(state.nativeThisObject());
-        se::Object    *thisObject = state.thisObject();
-        const auto    &jsArgs     = state.args();
+        T *            self       = reinterpret_cast<T *>(state.nativeThisObject());
+        se::Object *   thisObject = state.thisObject();
+        const auto &   jsArgs     = state.args();
         if (ARG_N != jsArgs.size()) {
             SE_LOGE("incorret argument size %d, expect %d\n", static_cast<int>(jsArgs.size()), static_cast<int>(ARG_N));
             return false;
@@ -483,12 +480,12 @@ struct InstanceMethodOverloaded : InstanceMethodBase {
         bool ret      = false;
         auto argCount = state.args().size();
         for (auto *method : functions) {
-                                         if (method->arg_count == -1 || method->arg_count == argCount) {
-                                             ret = method->invoke(state);
-                                             if (ret) return true;
+            if (method->arg_count == -1 || method->arg_count == argCount) {
+                ret = method->invoke(state);
+                if (ret) return true;
             }
         }
-                                     return false;
+        return false;
     }
 };
 
@@ -501,13 +498,13 @@ struct InstanceField<F(T::*)> : InstanceFieldBase {
     type func;
 
     bool get(se::State &state) const override {
-        T          *self       = reinterpret_cast<T *>(state.nativeThisObject());
+        T *         self       = reinterpret_cast<T *>(state.nativeThisObject());
         se::Object *thisObject = state.thisObject();
         return nativevalue_to_se((self->*func), state.rval(), thisObject);
     }
 
     bool set(se::State &state) const override {
-        T          *self       = reinterpret_cast<T *>(state.nativeThisObject());
+        T *         self       = reinterpret_cast<T *>(state.nativeThisObject());
         se::Object *thisObject = state.thisObject();
         const auto &args       = state.args();
         return sevalue_to_native(args[0], &(self->*func), thisObject);
@@ -546,9 +543,9 @@ struct AccessorSet<std::nullptr_t> {
 };
 
 template <typename T, typename R>
-struct AccessorGet<R(T::*)()> {
+struct AccessorGet<R (T::*)()> {
     using class_type  = T;
-    using type        = R(T::*)();
+    using type        = R (T::*)();
     using return_type = R;
     static_assert(!std::is_void_v<R>);
 };
@@ -564,7 +561,7 @@ struct AccessorSet<R (T::*)(F)> {
 template <typename T, typename R>
 struct AccessorGet<R (T::*)() const> {
     using class_type  = T;
-    using type        = R(T::*)() const;
+    using type        = R (T::*)() const;
     using return_type = R;
     static_assert(!std::is_void_v<R>);
 };
@@ -617,7 +614,7 @@ struct InstanceAttribute<AttributeAccessor<T, Getter, Setter>> : InstanceAttribu
 
     bool get(se::State &state) const override {
         if constexpr (HAS_GETTER) {
-            T          *self       = reinterpret_cast<T *>(state.nativeThisObject());
+            T *         self       = reinterpret_cast<T *>(state.nativeThisObject());
             se::Object *thisObject = state.thisObject();
             if constexpr (GETTER_IS_MEMBER_FN) {
                 return nativevalue_to_se((self->*getterPtr)(), state.rval(), thisObject);
@@ -630,9 +627,9 @@ struct InstanceAttribute<AttributeAccessor<T, Getter, Setter>> : InstanceAttribu
 
     bool set(se::State &state) const override {
         if constexpr (HAS_SETTER) {
-            T                                                              *self       = reinterpret_cast<T *>(state.nativeThisObject());
-            se::Object                                                     *thisObject = state.thisObject();
-            const auto                                                     &args       = state.args();
+            T *                                                             self       = reinterpret_cast<T *>(state.nativeThisObject());
+            se::Object *                                                    thisObject = state.thisObject();
+            const auto &                                                    args       = state.args();
             HolderType<set_value_type, std::is_reference_v<set_value_type>> temp;
             sevalue_to_native(args[0], &(temp.data), thisObject);
             if constexpr (SETTER_IS_MEMBER_FN) {
@@ -662,7 +659,7 @@ struct StaticMethod<R (*)(ARGS...)> : StaticMethodBase {
 
     bool invoke(se::State &state) const override {
         constexpr auto indexes{std::make_index_sequence<sizeof...(ARGS)>()};
-        const auto    &jsArgs = state.args();
+        const auto &   jsArgs = state.args();
         if (ARG_N != jsArgs.size()) {
             SE_LOGE("incorret argument size %d, expect %d\n", static_cast<int>(jsArgs.size()), static_cast<int>(ARG_N));
             return false;
@@ -684,12 +681,12 @@ struct StaticMethodOverloaded : StaticMethodBase {
         bool ret      = false;
         auto argCount = state.args().size();
         for (auto *method : functions) {
-                                       if (method->arg_count == -1 || method->arg_count == argCount) {
-                                           ret = method->invoke(state);
-                                           if (ret) return true;
+            if (method->arg_count == -1 || method->arg_count == argCount) {
+                ret = method->invoke(state);
+                if (ret) return true;
             }
         }
-                                   return false;
+        return false;
     }
 };
 
@@ -761,7 +758,7 @@ struct StaticAttribute<SAttributeAccessor<T, Getter, Setter>> : StaticAttributeB
 
     bool set(se::State &state) const override {
         if constexpr (HAS_SETTER) {
-            const auto                                                     &args = state.args();
+            const auto &                                                    args = state.args();
             HolderType<set_value_type, std::is_reference_v<set_value_type>> temp;
             sevalue_to_native(args[0], &(temp.data), nullptr);
             (*setterPtr)(temp.value());
@@ -784,14 +781,14 @@ public:
         std::vector<std::unique_ptr<ConstructorBase>>                                constructors;
         std::vector<std::unique_ptr<FinalizerBase>>                                  finalizeCallbacks;
         std::string                                                                  className;
-        se::Class                                                                   *kls = nullptr;
+        se::Class *                                                                  kls = nullptr;
         // se::Object *                                                  nsObject    = nullptr;
         se::Object *parentProto = nullptr;
     };
     inline context_ *operator[](const std::string &key) {
         return this->operator[](key.c_str());
     }
-    context_           *operator[](const char *key);
+    context_ *          operator[](const char *key);
     static context_db_ &instance();
     static void         reset();
 
