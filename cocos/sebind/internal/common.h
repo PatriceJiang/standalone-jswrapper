@@ -45,6 +45,15 @@ struct Cons<T, TypeList<OTHERS...>> {
     using type = TypeList<T, OTHERS...>;
 };
 
+template <typename T, typename S>
+struct IsConstructibleWithTypeList;
+
+template <typename T, typename... ARGS>
+struct IsConstructibleWithTypeList<T, TypeList<ARGS...>> {
+    // NOLINTNEXTLINE
+    constexpr static bool value = std::is_constructible<T, ARGS...>::value;
+};
+
 template <template <typename, bool> typename M, typename List>
 struct MapTypeListToTuple;
 
@@ -67,23 +76,23 @@ struct FilterThisObject;
 
 template <typename T, typename... OTHERS>
 struct FilterThisObject<T, OTHERS...> {
-    using nonthis_type_list = std::conditional_t<IsThisObject<T>::value,
-                                                 typename FilterThisObject<OTHERS...>::nonthis_type_list,
-                                                 typename Cons<T, typename FilterThisObject<OTHERS...>::nonthis_type_list>::type>;
-    using real_type_list    = typename Cons<std::conditional_t<IsThisObject<T>::value, se::Object *, T>,
-                                         typename FilterThisObject<OTHERS...>::real_type_list>::type;
+    using filtered_types = std::conditional_t<IsThisObject<T>::value,
+                                              typename FilterThisObject<OTHERS...>::filtered_types,
+                                              typename Cons<T, typename FilterThisObject<OTHERS...>::filtered_types>::type>;
+    using mapped_types   = typename Cons<std::conditional_t<IsThisObject<T>::value, se::Object *, T>,
+                                       typename FilterThisObject<OTHERS...>::mapped_types>::type;
 };
 
 template <>
 struct FilterThisObject<> {
-    using nonthis_type_list = TypeList<>;
-    using real_type_list    = TypeList<>;
+    using filtered_types = TypeList<>;
+    using mapped_types   = TypeList<>;
 };
 
 template <size_t From, size_t To, bool Skip>
 struct MapArg {
     constexpr static size_t FROM = From;
-    constexpr static size_t TO   = To;
+    constexpr static size_t TO   = To; // NOLINT
     constexpr static bool   SKIP = Skip;
 };
 
@@ -130,18 +139,18 @@ struct TypeListMap {
 };
 
 template <typename T>
-struct UnmapArgTypes;
+struct TypeMapping;
 
 template <typename... ARGS>
-struct UnmapArgTypes<TypeList<ARGS...>> {
-    using declare_args                 = TypeList<ARGS...>;
-    using jsinput_args                 = typename FilterThisObject<ARGS...>::nonthis_type_list;
-    using cpp_args                     = typename FilterThisObject<ARGS...>::real_type_list;
-    using cpp_args_tuple               = typename cpp_args::tuple_type;
-    using js_args_tuple                = typename jsinput_args::tuple_type;
-    using map_list                     = typename TypeListMap<declare_args, jsinput_args>::map_list;
+struct TypeMapping<TypeList<ARGS...>> {
+    using declare_types                = TypeList<ARGS...>;
+    using input_types                  = typename FilterThisObject<ARGS...>::filtered_types;
+    using result_types                 = typename FilterThisObject<ARGS...>::mapped_types;
+    using result_types_tuple           = typename result_types::tuple_type;
+    using input_types_tuple            = typename input_types::tuple_type;
+    using mapping_list                 = typename TypeListMap<declare_types, input_types>::map_list;
     static constexpr size_t FULL_ARGN  = sizeof...(ARGS);
-    static constexpr size_t NEW_ARGN   = jsinput_args::COUNT;
+    static constexpr size_t NEW_ARGN   = input_types::COUNT;
     static constexpr bool   NEED_REMAP = FULL_ARGN != NEW_ARGN;
 };
 
@@ -158,10 +167,10 @@ struct ArgumentFilter {
     }
 };
 
-template <typename UnmapType, typename TupleIn, typename TupleOut, size_t... indexes>
+template <typename Mapping, typename TupleIn, typename TupleOut, size_t... indexes>
 void mapTupleArguments(se::Object *self, TupleIn &input, TupleOut &output, std::index_sequence<indexes...> /*args*/) {
     if constexpr (std::tuple_size<TupleOut>::value > 0) {
-        using map_tuple = typename UnmapType::map_list::tuple_type;
+        using map_tuple = typename Mapping::mapping_list::tuple_type;
         // output = {ArgumentFilter<std::remove_reference_t<decltype(std::get<indexes>(input))>>::forward(self, std::get<std::remove_reference_t<decltype(std::get<indexes>(REMAP))>::TO>(input))...};
         output = {ArgumentFilter::forward<map_tuple, TupleIn, indexes>(self, input)...};
     }
@@ -198,8 +207,10 @@ struct ConstructorBase {
     size_t          arg_count = 0;
     SeCallbackFnPtr bfnPtr{nullptr};
     virtual bool    construct(se::State &state) {
-           if (bfnPtr) return (*bfnPtr)(state);
-        return false;
+           if (bfnPtr) {
+               return (*bfnPtr)(state);
+        }
+           return false;
     }
 };
 struct InstanceMethodBase {
@@ -208,8 +219,10 @@ struct InstanceMethodBase {
     size_t          arg_count;
     SeCallbackFnPtr bfnPtr{nullptr};
     virtual bool    invoke(se::State &state) const {
-           if (bfnPtr) return (*bfnPtr)(state);
-        return false;
+           if (bfnPtr) {
+               return (*bfnPtr)(state);
+        }
+           return false;
     }
 };
 struct FinalizerBase {
@@ -292,16 +305,16 @@ struct StaticAttribute;
 template <typename T, typename... ARGS>
 struct Constructor<TypeList<T, ARGS...>> : ConstructorBase {
     bool construct(se::State &state) override {
-        using unmap_types      = UnmapArgTypes<TypeList<ARGS...>>;
-        using args_holder_type = typename MapTypeListToTuple<HolderType, typename unmap_types::jsinput_args>::tuple;
+        using unmap_types      = TypeMapping<TypeList<ARGS...>>;
+        using args_holder_type = typename MapTypeListToTuple<HolderType, typename unmap_types::input_types>::tuple;
         se::PrivateObjectBase *self{nullptr};
         se::Object            *thisObj = state.thisObject();
         args_holder_type       args{};
         const auto            &jsArgs = state.args();
         convert_js_args_to_tuple(jsArgs, args, thisObj, std::make_index_sequence<unmap_types::NEW_ARGN>());
         if constexpr (unmap_types::NEED_REMAP) {
-            using map_list_type  = typename unmap_types::map_list;
-            using map_tuple_type = typename unmap_types::cpp_args_tuple;
+            using map_list_type  = typename unmap_types::mapping_list;
+            using map_tuple_type = typename unmap_types::result_types_tuple;
 
             static_assert(map_list_type::COUNT == sizeof...(ARGS));
 
@@ -352,6 +365,7 @@ struct Constructor<T *(*)(ARGS...)> : ConstructorBase {
 template <typename T>
 struct Finalizer : FinalizerBase {
     using type = void (*)(T *);
+    using arg_type = T;
     type func;
     void finalize(void *ptr) override {
         (*func)(reinterpret_cast<T *>(ptr));
@@ -738,8 +752,9 @@ template <typename T>
 struct FunctionWrapper;
 
 template <typename R, typename... ARGS>
-struct FunctionWrapper<R *(*)(ARGS...)> {
-    using type                    = R *(*)(ARGS...);
+struct FunctionWrapper<R (*)(ARGS...)> {
+    using type                    = R (*)(ARGS...);
+    using return_type             = R;
     using arg_list                = TypeList<ARGS...>;
     static constexpr size_t ARG_N = sizeof...(ARGS);
 };

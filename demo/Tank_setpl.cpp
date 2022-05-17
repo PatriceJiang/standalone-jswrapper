@@ -67,6 +67,10 @@ war::Tank* Tank3_getThis(se::Object *self) {
     return new war::Tank("getThis");
 }
 
+// void Tank3_getThis(se::Object *self) {
+//     std::cout << "This is demo of jsTHIS!!!" << std::endl;
+//     std::cout << self << std::endl;
+// }
 } // namespace
 
 
@@ -115,7 +119,7 @@ bool js_register_war_Tank(se::Object *obj) {
         .install(obj);
         
     sebind::class_<war::Tank> tank3("Tank3");
-    tank3//.constructor(&Tank3_constructor)
+    tank3.constructor(&Tank3_getThis)
         .constructor<sebind::ThisObject>()
         .property("hello", &commSeCallback, &commSeCallback)
         .function("walk", &commSeCallback)

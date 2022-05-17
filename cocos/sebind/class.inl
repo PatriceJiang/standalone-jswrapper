@@ -98,8 +98,8 @@ template <typename T>
 template <typename... ARGS>
 class_<T> &class_<T>::constructor() {
     using CTYPE = intl::Constructor<intl::TypeList<T, ARGS...>>;
-    using MTYPE = intl::UnmapArgTypes<intl::TypeList<ARGS...>>;
-    // static_assert(!std::is_same_v<void, InstanceMethod<Method>::return_type>);
+    using MTYPE = intl::TypeMapping<intl::TypeList<ARGS...>>;
+    static_assert(intl::IsConstructibleWithTypeList<T, typename MTYPE::result_types>::value);
     auto *constructp      = new CTYPE();
     constructp->arg_count = MTYPE::NEW_ARGN;
     _ctx->constructors.emplace_back(constructp);
@@ -110,6 +110,7 @@ template <typename T>
 template <typename F>
 class_<T> &class_<T>::constructor(F callback) {
     using FTYPE           = intl::FunctionWrapper<F>;
+    static_assert(std::is_same<typename FTYPE::return_type, T*>::value);
     using CTYPE           = intl::Constructor<typename FTYPE::type>;
     auto *constructp      = new CTYPE();
     constructp->arg_count = FTYPE::ARG_N;
@@ -140,9 +141,7 @@ template <typename T>
 template <typename Method>
 class_<T> &class_<T>::function(const std::string &name, Method method) {
     using MTYPE = intl::InstanceMethod<Method>;
-    // static_assert(!std::is_same_v<void, InstanceMethod<Method>::return_type>);
     static_assert(std::is_base_of<typename MTYPE::class_type, T>::value);
-    // static_assert(std::is_member_function_pointer_v<Method>);
     auto *methodp        = new MTYPE();
     methodp->method_name = name;
     methodp->class_name  = _ctx->className;
