@@ -22,6 +22,7 @@ int main(int argc, char **argv) {
     auto *engine = se::ScriptEngine::getInstance();
     auto *fu     = cc::FileUtils::getInstance();
 
+    engine->addRegisterCallback(jsb_register_global_variables);
     engine->addRegisterCallback(register_all_war);
 
 // TODO: replace search path
